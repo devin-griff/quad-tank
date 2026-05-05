@@ -50,23 +50,17 @@ st.sidebar.header("Initial Conditions")
 st.sidebar.caption("Absolute tank height (cm) — red marker shows steady state")
 
 def _slider_ss(label, lo, hi, default, step, ss):
-    """Slider in absolute units with a red ▲ SS marker touching the track.
-    Renders a custom label + marker above the track, then the slider itself
-    with label_visibility='collapsed' so the track starts immediately below."""
+    """Slider with a red ▲ SS marker shown below the track."""
     pct = (ss - lo) / (hi - lo) * 100
+    val = st.sidebar.slider(label, lo, hi, default, step)
     st.sidebar.markdown(
-        # Widget label (matches Streamlit's default label style)
-        f'<p style="font-size:14px;font-weight:600;margin:0 0 25px 0;">'
-        f'{label}</p>'
-        # Marker row: sits between the label and the track
-        f'<div style="position:relative;height:30px;margin-bottom:-55px;">'
-        f'<span style="position:absolute;top:20px;left:{pct:.1f}%;'
+        f'<div style="position:relative;height:18px;margin-top:-10px;margin-bottom:6px;">'
+        f'<span style="position:absolute;left:{pct:.1f}%;'
         f'transform:translateX(-50%);font-size:13px;'
-        f'color:#cc0000;line-height:1;font-weight:600;">▲{ss:.1f}</span>'
+        f'color:#cc0000;font-weight:600;line-height:1;">▲{ss:.1f}</span>'
         f'</div>',
         unsafe_allow_html=True)
-    return st.sidebar.slider(label, lo, hi, default, step,
-                             label_visibility="collapsed")
+    return val
 
 # Slider ranges derived from model variable bounds converted to absolute height
 x1init = _slider_ss("x₁  (Tank 1)", 7.5, 28.0, 19.0, 0.1, XSS[1])
