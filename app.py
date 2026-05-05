@@ -40,24 +40,16 @@ st.markdown("""
 st.sidebar.header("Initial Conditions")
 st.sidebar.caption("Absolute tank height (cm)")
 
-def _slider_ss(label, lo, hi, default, step, ss):
-    """Native slider with SS in label; thin bar below shows SS position visually."""
-    pct = (ss - lo) / (hi - lo) * 100
-    val = st.sidebar.slider(f"{label} — SS {ss:.1f}", lo, hi, default, step, format="%.1f")
-    st.sidebar.markdown(
-        f'<div style="position:relative;height:4px;background:#ddd;'
-        f'border-radius:2px;margin:2px 0 14px 0;">'
-        f'<div style="position:absolute;left:calc({pct:.1f}% - 1px);'
-        f'top:0;width:2px;height:4px;background:#cc0000;border-radius:1px;"></div>'
-        f'</div>',
-        unsafe_allow_html=True)
-    return val
+def _slider_ss(label, lo, hi, default, step, ss, key):
+    """Native slider with SS value embedded in the label."""
+    return st.sidebar.slider(f"{label} — SS {ss:.1f}", lo, hi, default, step,
+                             format="%.1f", key=key)
 
 # Slider ranges derived from model variable bounds converted to absolute height
-x1init = _slider_ss("x₁  (Tank 1)", 7.5, 28.0, 19.0, 0.1, XSS[1])
-x2init = _slider_ss("x₂  (Tank 2)", 7.5, 28.0,  9.0, 0.1, XSS[2])
-x3init = _slider_ss("x₃  (Tank 3)", 3.5, 28.0, 19.2, 0.1, XSS[3])
-x4init = _slider_ss("x₄  (Tank 4)", 4.5, 28.0, 16.3, 0.1, XSS[4])
+x1init = _slider_ss("x₁  (Tank 1)", 7.5, 28.0, 19.0, 0.1, XSS[1], "x1init")
+x2init = _slider_ss("x₂  (Tank 2)", 7.5, 28.0,  9.0, 0.1, XSS[2], "x2init")
+x3init = _slider_ss("x₃  (Tank 3)", 3.5, 28.0, 19.2, 0.1, XSS[3], "x3init")
+x4init = _slider_ss("x₄  (Tank 4)", 4.5, 28.0, 16.3, 0.1, XSS[4], "x4init")
 
 # Convert absolute heights → deviations for the solver
 z1init = x1init - XSS[1]
@@ -65,6 +57,13 @@ z2init = x2init - XSS[2]
 z3init = x3init - XSS[3]
 z4init = x4init - XSS[4]
 
+def _init_ss():
+    st.session_state["x1init"] = XSS[1]
+    st.session_state["x2init"] = XSS[2]
+    st.session_state["x3init"] = XSS[3]
+    st.session_state["x4init"] = XSS[4]
+
+st.sidebar.button("Initialize at steady state", on_click=_init_ss, use_container_width=True)
 solve_btn = st.sidebar.button("Solve Optimization", type="primary", use_container_width=True)
 
 # ── Solver ────────────────────────────────────────────────────────────────────
