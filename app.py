@@ -562,9 +562,9 @@ def build_tank_figure(res):
              font=dict(size=14, color="#0d0d3a"), xanchor="left"),
         dict(x=GX[2][1]+0.06, y=GY0,    text="0",  showarrow=False,
              font=dict(size=14, color="#0d0d3a"), xanchor="left"),
-        dict(x=LP-VW-VH-0.12, y=GAMMA_Y, text="γ₁", showarrow=False,
+        dict(x=LP-VW-VH-0.12, y=GAMMA_Y, text="γ₁=0.4", showarrow=False,
              font=dict(size=13, color="#8b0000"), xanchor="right"),
-        dict(x=RP+VW+VH+0.12, y=GAMMA_Y, text="γ₂", showarrow=False,
+        dict(x=RP+VW+VH+0.12, y=GAMMA_Y, text="γ₂=0.4", showarrow=False,
              font=dict(size=13, color="#8b0000"), xanchor="left"),
     ]
 
