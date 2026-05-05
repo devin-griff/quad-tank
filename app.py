@@ -611,12 +611,12 @@ def build_tank_figure(res):
                 "type": "buttons",
                 "x": 0.0, "xanchor": "left", "y": -0.22, "yanchor": "top",
                 "buttons": [
-                    {"label": "⏸  Pause", "method": "animate",
-                     "args": [[None], {"frame": {"duration": 0}, "mode": "immediate"}]},
                     {"label": "▶  Play", "method": "animate",
                      "args": [None, {"frame": {"duration": 400, "redraw": True},
                                      "fromcurrent": True,
                                      "transition": {"duration": 150}}]},
+                    {"label": "⏸  Pause", "method": "animate",
+                     "args": [[None], {"frame": {"duration": 0}, "mode": "immediate"}]},
                 ],
             }],
             sliders=[{
