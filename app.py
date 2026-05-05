@@ -52,12 +52,12 @@ def _slider_ss(label, lo, hi, default, step, ss):
     # Horizontal: center only the ▲ glyph at pct%, put the number to its right separately
     st.sidebar.markdown(
         f'<div style="position:relative;font-size:12px;color:#555;'
-        f'margin-top:-14px;margin-bottom:22px;">'
+        f'margin-top:-10px;margin-bottom:22px;">'
         f'<span>{lo}</span>'
         f'<span style="position:absolute;left:{pct:.1f}%;transform:translateX(-50%);'
-        f'color:#cc0000;font-weight:700;font-size:13px;line-height:1;">▲</span>'
-        f'<span style="position:absolute;left:calc({pct:.1f}% + 6px);'
-        f'color:#cc0000;font-weight:600;font-size:11px;white-space:nowrap;">{ss:.1f}</span>'
+        f'color:#cc0000;font-weight:700;font-size:16px;line-height:1;">▲</span>'
+        f'<span style="position:absolute;left:calc({pct:.1f}% + 8px);'
+        f'color:#cc0000;font-weight:600;font-size:13px;white-space:nowrap;">{ss:.1f}</span>'
         f'<span style="float:right;">{hi}</span>'
         f'</div>',
         unsafe_allow_html=True)
