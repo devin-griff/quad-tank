@@ -41,12 +41,15 @@ st.sidebar.header("Initial Conditions")
 st.sidebar.caption("Absolute tank height (cm) — ▲ shows steady state")
 
 def _slider_ss(label, lo, hi, default, step, ss):
-    """Native Streamlit slider with a simple SS caption below."""
+    """Native Streamlit slider with ▲ SS marker positioned at correct horizontal location."""
+    pct = (ss - lo) / (hi - lo) * 100
     val = st.sidebar.slider(label, lo, hi, default, step)
+    # Positioned ▲ in its own row — no negative margins, no hiding Streamlit elements
     st.sidebar.markdown(
-        f'<p style="font-size:11px;color:#888;margin:-8px 0 8px 0;">'
-        f'Steady state: <span style="color:#cc0000;font-weight:600;">▲ {ss:.1f}</span>'
-        f'</p>',
+        f'<div style="position:relative;height:16px;margin-bottom:10px;">'
+        f'<span style="position:absolute;left:{pct:.1f}%;transform:translateX(-50%);'
+        f'font-size:12px;color:#cc0000;font-weight:600;">▲{ss:.1f}</span>'
+        f'</div>',
         unsafe_allow_html=True)
     return val
 
