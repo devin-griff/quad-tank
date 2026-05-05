@@ -29,46 +29,24 @@ MAX_H = 30.0  # display ceiling for all tanks (cm)
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Prevent text selection on slider number lines and thumb labels */
-section[data-testid="stSidebar"] [data-testid="stSlider"] * {
-    user-select: none;
-    -webkit-user-select: none;
-}
-/* Hide Streamlit's built-in slider range numbers (we render our own) */
-section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBar"] {
-    display: none !important;
-}
-/* Reduce block container top padding */
 .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: 0.6rem !important;
     padding-bottom: 0rem !important;
 }
-/* Tighten the page title */
-h1 { margin-top: 0 !important; padding-top: 0 !important; margin-bottom: 0.25rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
 st.sidebar.header("Initial Conditions")
-st.sidebar.caption("Absolute tank height (cm) — red marker shows steady state")
+st.sidebar.caption("Absolute tank height (cm) — ▲ shows steady state")
 
 def _slider_ss(label, lo, hi, default, step, ss):
-    """Slider with manually rendered label, range numbers and red ▲ SS marker."""
-    pct = (ss - lo) / (hi - lo) * 100
+    """Native Streamlit slider with a simple SS caption below."""
+    val = st.sidebar.slider(label, lo, hi, default, step)
     st.sidebar.markdown(
-        f'<p style="font-size:14px;font-weight:600;margin:0 0 4px 0;">{label}</p>',
-        unsafe_allow_html=True)
-    val = st.sidebar.slider(label, lo, hi, default, step,
-                            label_visibility="collapsed")
-    # Render range numbers + SS marker in one row, independent of Streamlit version
-    st.sidebar.markdown(
-        f'<div style="position:relative;font-size:12px;color:#666;'
-        f'margin-top:-6px;margin-bottom:20px;">'
-        f'<span>{lo}</span>'
-        f'<span style="position:absolute;left:{pct:.1f}%;transform:translateX(-50%);'
-        f'font-size:13px;color:#cc0000;font-weight:600;">▲{ss:.1f}</span>'
-        f'<span style="float:right;">{hi}</span>'
-        f'</div>',
+        f'<p style="font-size:11px;color:#888;margin:-8px 0 8px 0;">'
+        f'Steady state: <span style="color:#cc0000;font-weight:600;">▲ {ss:.1f}</span>'
+        f'</p>',
         unsafe_allow_html=True)
     return val
 
