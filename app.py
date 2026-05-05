@@ -8,23 +8,14 @@ st.set_page_config(page_title="Quad Tank System", layout="wide")
 
 @st.cache_resource
 def _get_ipopt_path():
-    """Return the IPOPT executable path, downloading via IDAES if needed."""
-    import os, sys, subprocess, shutil, glob
+    """Return the IPOPT executable path."""
+    import os, sys, shutil
     if sys.platform == 'win32':
         p = r'C:\Users\Devin\AppData\Local\idaes\bin\ipopt.exe'
         return p if os.path.exists(p) else shutil.which('ipopt')
-    # Linux / Streamlit Cloud
-    linux_path = os.path.expanduser("~/.idaes/bin/ipopt")
-    if not os.path.exists(linux_path):
-        subprocess.run(["idaes", "get-extensions"], check=False)
-    # Search broadly in case IDAES installed to a different subdirectory
-    if not os.path.exists(linux_path):
-        hits = glob.glob(os.path.expanduser("~/.idaes/**/ipopt"), recursive=True)
-        if hits:
-            return hits[0]
-    return linux_path if os.path.exists(linux_path) else shutil.which('ipopt')
+    return shutil.which('ipopt')  # coinor-ipopt apt package puts it on PATH
 
-_get_ipopt_path()  # trigger download at startup
+_get_ipopt_path()  # warm the cache at startup
 st.markdown(
     '<h2 style="margin:0 0 0.15rem 0;padding:0;font-size:1.4rem;font-weight:700;">'
     'Quad Tank — Open Loop Dynamic Optimization</h2>',

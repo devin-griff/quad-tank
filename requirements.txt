@@ -1,4 +1,3 @@
 streamlit
 pyomo
 plotly
-idaes-pse
