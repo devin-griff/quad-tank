@@ -33,6 +33,10 @@ section[data-testid="stSidebar"] {
     user-select: none;
     -webkit-user-select: none;
 }
+section[data-testid="stSidebar"] [data-testid="stTickBarMin"],
+section[data-testid="stSidebar"] [data-testid="stTickBarMax"] {
+    opacity: 1 !important;
+}
 .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: 0.6rem !important;
