@@ -604,13 +604,13 @@ def build_tank_figure(res):
             shapes=shapes,
             annotations=annotations,
             height=730,
-            margin=dict(t=40, b=110, l=15, r=15),
+            margin=dict(t=40, b=130, l=15, r=15),
             plot_bgcolor="#f8fafd",
             paper_bgcolor="#f8fafd",
             updatemenus=[{
                 "type": "buttons",
                 "direction": "right",
-                "x": 0.0, "xanchor": "left", "y": -0.22, "yanchor": "top",
+                "x": 0.0, "xanchor": "left", "y": -0.32, "yanchor": "top",
                 "buttons": [
                     {"label": "▶  Play", "method": "animate",
                      "args": [None, {"frame": {"duration": 400, "redraw": True},
