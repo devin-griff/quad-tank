@@ -29,6 +29,10 @@ MAX_H = 30.0  # display ceiling for all tanks (cm)
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+/* Hide Streamlit's native range numbers — we render our own with the SS marker */
+section[data-testid="stSidebar"] [data-testid="stTickBar"] {
+    display: none !important;
+}
 .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: 0.6rem !important;
@@ -41,14 +45,18 @@ st.sidebar.header("Initial Conditions")
 st.sidebar.caption("Absolute tank height (cm) — ▲ shows steady state")
 
 def _slider_ss(label, lo, hi, default, step, ss):
-    """Native Streamlit slider with ▲ SS marker positioned at correct horizontal location."""
+    """Slider with native label/value; replaces tick bar with our own lo / ▲ss / hi row."""
     pct = (ss - lo) / (hi - lo) * 100
     val = st.sidebar.slider(label, lo, hi, default, step)
-    # Pull the ▲ up to sit just below the slider handle
+    # Overlap exactly where the (hidden) tick bar was: top=50.7px from slider top.
+    # Slider total height ≈ 82px → margin-top to reach tick bar = -(82-50.7) ≈ -32px
     st.sidebar.markdown(
-        f'<div style="position:relative;height:16px;margin-top:-46px;margin-bottom:30px;">'
+        f'<div style="position:relative;font-size:12px;color:#555;'
+        f'margin-top:2px;margin-bottom:8px;">'
+        f'<span>{lo}</span>'
         f'<span style="position:absolute;left:{pct:.1f}%;transform:translateX(-50%);'
-        f'font-size:12px;color:#cc0000;font-weight:600;">▲{ss:.1f}</span>'
+        f'color:#cc0000;font-weight:600;">▲{ss:.1f}</span>'
+        f'<span style="float:right;">{hi}</span>'
         f'</div>',
         unsafe_allow_html=True)
     return val
