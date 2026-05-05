@@ -63,7 +63,7 @@ def _slider_ss(label, lo, hi, default, step, ss):
     # Render range numbers + SS marker in one row, independent of Streamlit version
     st.sidebar.markdown(
         f'<div style="position:relative;font-size:12px;color:#666;'
-        f'margin-top:-8px;margin-bottom:8px;">'
+        f'margin-top:-6px;margin-bottom:20px;">'
         f'<span>{lo}</span>'
         f'<span style="position:absolute;left:{pct:.1f}%;transform:translateX(-50%);'
         f'font-size:13px;color:#cc0000;font-weight:600;">▲{ss:.1f}</span>'
