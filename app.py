@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pyomo.environ as pyo
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
