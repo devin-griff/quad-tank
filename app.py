@@ -29,6 +29,10 @@ MAX_H = 30.0  # display ceiling for all tanks (cm)
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+section[data-testid="stSidebar"] {
+    user-select: none;
+    -webkit-user-select: none;
+}
 .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: 0.6rem !important;
@@ -63,7 +67,7 @@ def _init_ss():
     st.session_state["x3init"] = XSS[3]
     st.session_state["x4init"] = XSS[4]
 
-st.sidebar.button("Initialize at steady state", on_click=_init_ss, use_container_width=True)
+st.sidebar.button("Initialize at Steady State", on_click=_init_ss, use_container_width=True)
 solve_btn = st.sidebar.button("Solve Optimization", type="primary", use_container_width=True)
 
 # ── Solver ────────────────────────────────────────────────────────────────────
