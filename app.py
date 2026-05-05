@@ -668,6 +668,18 @@ def build_timeseries(res):
 
 
 # ── Main layout ───────────────────────────────────────────────────────────────
+if "res" not in st.session_state:
+    with st.spinner("Running IPOPT optimization..."):
+        try:
+            res = solve_model([z1init, z2init, z3init, z4init])
+        except Exception as e:
+            st.error(f"Solver error: {e}")
+            st.stop()
+    st.session_state["res"] = res
+    st.session_state["solve_status"] = res["status"]
+    st.session_state["autoplay"] = True
+    st.rerun()
+
 if solve_btn:
     with st.spinner("Running IPOPT optimization..."):
         try:
