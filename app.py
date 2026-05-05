@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pyomo.environ as pyo
+import io, contextlib
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -168,12 +169,15 @@ def solve_model(zi):
     _ipopt = _get_ipopt_path()
     solver = (pyo.SolverFactory('ipopt', executable=_ipopt)
               if _ipopt else pyo.SolverFactory('ipopt'))
-    result = solver.solve(m, tee=False)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        result = solver.solve(m, tee=True)
     status = str(result.solver.termination_condition)
 
     t_pts = list(m.iii)
     return {
         "status": status,
+        "log": buf.getvalue(),
         "t": [k * 10 for k in t_pts],
         "z10": [pyo.value(m.z10[i]) for i in t_pts],
         "z20": [pyo.value(m.z20[i]) for i in t_pts],
@@ -697,7 +701,7 @@ if _status is not None:
     else:
         st.toast("Optimal solution found.", icon="✅")
 
-tab_sim, tab_plots = st.tabs(["▶  Simulation", "📈  Plots"])
+tab_sim, tab_plots, tab_logs = st.tabs(["▶  Simulation", "📈  Plots", "📋  Logs"])
 
 if "res" in st.session_state:
     res = st.session_state["res"]
@@ -724,6 +728,13 @@ if "res" in st.session_state:
 
     with tab_plots:
         st.plotly_chart(build_timeseries(res), use_container_width=True)
+
+    with tab_logs:
+        log = res.get("log", "")
+        if log.strip():
+            st.code(log, language=None)
+        else:
+            st.info("No log output was captured. The solver may be writing directly to the system stdout.")
 
 else:
     with tab_sim:
