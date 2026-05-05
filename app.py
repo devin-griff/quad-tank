@@ -38,10 +38,9 @@ section[data-testid="stSidebar"] [data-testid="stSlider"] * {
 section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBar"] {
     display: none !important;
 }
-/* Hide header and sidebar toggle buttons */
+/* Hide header and sidebar collapse button */
 header[data-testid="stHeader"] { display: none !important; }
 [data-testid="stSidebarCollapseButton"] { display: none !important; }
-[data-testid="collapsedControl"] { display: none !important; }
 /* Reduce block container top padding */
 .block-container,
 [data-testid="stMainBlockContainer"] {
