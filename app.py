@@ -44,9 +44,9 @@ def _slider_ss(label, lo, hi, default, step, ss):
     """Native Streamlit slider with ▲ SS marker positioned at correct horizontal location."""
     pct = (ss - lo) / (hi - lo) * 100
     val = st.sidebar.slider(label, lo, hi, default, step)
-    # Positioned ▲ in its own row — no negative margins, no hiding Streamlit elements
+    # Pull the ▲ up to sit just below the slider handle
     st.sidebar.markdown(
-        f'<div style="position:relative;height:16px;margin-bottom:10px;">'
+        f'<div style="position:relative;height:16px;margin-top:-46px;margin-bottom:30px;">'
         f'<span style="position:absolute;left:{pct:.1f}%;transform:translateX(-50%);'
         f'font-size:12px;color:#cc0000;font-weight:600;">▲{ss:.1f}</span>'
         f'</div>',
