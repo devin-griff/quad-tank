@@ -38,10 +38,6 @@ section[data-testid="stSidebar"] {
     padding-top: 0.6rem !important;
     padding-bottom: 0rem !important;
 }
-[data-testid="stTickBarMin"],
-[data-testid="stTickBarMax"] {
-    display: none !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
