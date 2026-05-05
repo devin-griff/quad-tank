@@ -7,15 +7,24 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="Quad Tank System", layout="wide")
 
 @st.cache_resource
-def _ensure_ipopt():
-    """Download IPOPT via IDAES on first run (Linux / Streamlit Cloud only)."""
-    import os, sys, subprocess
-    if sys.platform != 'win32':
-        linux_path = os.path.expanduser("~/.idaes/bin/ipopt")
-        if not os.path.exists(linux_path):
-            subprocess.run(["idaes", "get-extensions"], check=True)
+def _get_ipopt_path():
+    """Return the IPOPT executable path, downloading via IDAES if needed."""
+    import os, sys, subprocess, shutil, glob
+    if sys.platform == 'win32':
+        p = r'C:\Users\Devin\AppData\Local\idaes\bin\ipopt.exe'
+        return p if os.path.exists(p) else shutil.which('ipopt')
+    # Linux / Streamlit Cloud
+    linux_path = os.path.expanduser("~/.idaes/bin/ipopt")
+    if not os.path.exists(linux_path):
+        subprocess.run(["idaes", "get-extensions"], check=False)
+    # Search broadly in case IDAES installed to a different subdirectory
+    if not os.path.exists(linux_path):
+        hits = glob.glob(os.path.expanduser("~/.idaes/**/ipopt"), recursive=True)
+        if hits:
+            return hits[0]
+    return linux_path if os.path.exists(linux_path) else shutil.which('ipopt')
 
-_ensure_ipopt()
+_get_ipopt_path()  # trigger download at startup
 st.markdown(
     '<h2 style="margin:0 0 0.15rem 0;padding:0;font-size:1.4rem;font-weight:700;">'
     'Quad Tank — Open Loop Dynamic Optimization</h2>',
@@ -182,15 +191,9 @@ def solve_model(zi):
         expr=m.track == sum(m.z10[i]**2 + m.z20[i]**2 + m.z30[i]**2 + m.z40[i]**2 for i in m.iii))
     m.obj = pyo.Objective(expr=m.track, sense=pyo.minimize)
 
-    import os, sys
-    _win_ipopt   = r'C:\Users\Devin\AppData\Local\idaes\bin\ipopt.exe'
-    _linux_ipopt = os.path.expanduser("~/.idaes/bin/ipopt")
-    if sys.platform == 'win32' and os.path.exists(_win_ipopt):
-        solver = pyo.SolverFactory('ipopt', executable=_win_ipopt)
-    elif os.path.exists(_linux_ipopt):
-        solver = pyo.SolverFactory('ipopt', executable=_linux_ipopt)
-    else:
-        solver = pyo.SolverFactory('ipopt')
+    _ipopt = _get_ipopt_path()
+    solver = (pyo.SolverFactory('ipopt', executable=_ipopt)
+              if _ipopt else pyo.SolverFactory('ipopt'))
     result = solver.solve(m, tee=False)
     status = str(result.solver.termination_condition)
 
