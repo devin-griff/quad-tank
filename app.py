@@ -47,7 +47,7 @@ st.sidebar.caption("Absolute tank height (cm) — ▲ shows steady state")
 def _slider_ss(label, lo, hi, default, step, ss):
     """Slider with native label/value; replaces tick bar with our own lo / ▲ss / hi row."""
     pct = (ss - lo) / (hi - lo) * 100
-    val = st.sidebar.slider(label, lo, hi, default, step)
+    val = st.sidebar.slider(label, lo, hi, default, step, format="%.1f")
     # margin-top: slider was 82px with tick bar; now 50.7px without → -46+(82-51)=-14px
     # Horizontal: center only the ▲ glyph at pct%, put the number to its right separately
     st.sidebar.markdown(
