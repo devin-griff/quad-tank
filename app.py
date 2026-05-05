@@ -250,10 +250,9 @@ def build_tank_figure(res):
     GY0 = (RES_TOP + GAMMA_Y) / 2 - GH / 2   # ≈ 1.485
 
     # ── compute flow rates at each time step ─────────────────────────────────
-    # All flows expressed as physical volumetric rates:
-    #   drain_i  = SA_i * sqrt(2g*h_i)         [cm^2.5 s^-1, Torricelli]
-    #   pump_*   = fraction * (v + uss)         [same pump units as model]
-    # We normalise drains and pump flows separately so both are legible.
+    # All flows in cm³/s — same units, single normaliser:
+    #   drain_i  = SA_i * sqrt(2g*h_i)         [cm³/s, Torricelli]
+    #   pump_*   = fraction * (v + uss)         [cm³/s]
 
     t_pts = res["t"]
     n_pts = len(t_pts)
@@ -290,8 +289,8 @@ def build_tank_figure(res):
         p_top[4].append(max(0.0, (1 - _GAMA) * (v1k + _USS[1])))
         p_top[3].append(max(0.0, (1 - _GAMA) * (v2k + _USS[2])))
 
-    max_drain = max(v for d in drain.values() for v in d) or 1.0
-    max_pump  = max(
+    max_flow = max(
+        max(v for d in drain.values() for v in d),
         max(v for d in p_dir.values() for v in d),
         max(v for d in p_top.values() for v in d),
     ) or 1.0
@@ -303,16 +302,16 @@ def build_tank_figure(res):
     # SEGS: (flow_dict, key, pipe_x, y_high, y_low, colour, normaliser)
     SEGS = [
         # Torricelli drains — water starts at bottom of gray nozzle pipe
-        (drain,  1, LX_D, TB[1][1] - 0.50*(TB[1][1]-RES_TOP), 0.0, C_WATER, max_drain),
-        (drain,  2, RX_D, TB[2][1] - 0.50*(TB[2][1]-RES_TOP), 0.0, C_WATER, max_drain),
-        (drain,  3, LX_D, TB[1][3],  TB[1][1],  C_WATER, max_drain),  # T3 → T1
-        (drain,  4, RX_D, TB[2][3],  TB[2][1],  C_WATER, max_drain),  # T4 → T2
+        (drain,  1, LX_D, TB[1][1] - 0.50*(TB[1][1]-RES_TOP), 0.0, C_WATER, max_flow),
+        (drain,  2, RX_D, TB[2][1] - 0.50*(TB[2][1]-RES_TOP), 0.0, C_WATER, max_flow),
+        (drain,  3, LX_D, TB[1][3],  TB[1][1],  C_WATER, max_flow),  # T3 → T1
+        (drain,  4, RX_D, TB[2][3],  TB[2][1],  C_WATER, max_flow),  # T4 → T2
         # γ direct pump feeds — bottom of feed pipe = top of lower tank
-        (p_dir,  1, LX_P, TB[1][3],  TB[1][1],  C_WATER, max_pump ),  # γ×u1 → T1
-        (p_dir,  2, RX_P, TB[2][3],  TB[2][1],  C_WATER, max_pump ),  # γ×u2 → T2
+        (p_dir,  1, LX_P, TB[1][3],  TB[1][1],  C_WATER, max_flow),  # γ×u1 → T1
+        (p_dir,  2, RX_P, TB[2][3],  TB[2][1],  C_WATER, max_flow),  # γ×u2 → T2
         # (1-γ) overhead feeds — bottom of feed pipe = top of upper tank
-        (p_top,  3, LX_D, TB[3][3],  TB[3][1],  C_WATER, max_pump ),  # (1-γ)×u2 → T3
-        (p_top,  4, RX_D, TB[4][3],  TB[4][1],  C_WATER, max_pump ),  # (1-γ)×u1 → T4
+        (p_top,  3, LX_D, TB[3][3],  TB[3][1],  C_WATER, max_flow),  # (1-γ)×u2 → T3
+        (p_top,  4, RX_D, TB[4][3],  TB[4][1],  C_WATER, max_flow),  # (1-γ)×u1 → T4
     ]
 
     # ── helper ───────────────────────────────────────────────────────────────
