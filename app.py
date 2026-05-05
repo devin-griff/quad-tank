@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pyomo.environ as pyo
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -41,41 +40,14 @@ section[data-testid="stSidebar"] {
 </style>
 """, unsafe_allow_html=True)
 
-# Inject JS (via zero-height iframe) to keep slider tick-bar labels always visible.
-# components.html runs in a same-origin iframe on Streamlit Cloud, so window.parent.document
-# is accessible. We inject a <style> tag and keep moving it to the end of <head> via
-# setInterval so it loads after — and therefore beats — Streamlit's emotion CSS.
-components.html("""<script>
-(function () {
-  var CSS = '[data-testid="stTickBarMin"],[data-testid="stTickBarMax"]'
-          + '{opacity:1!important;visibility:visible!important;color:rgba(49,51,63,0.6)!important;}';
-  function ensureLast() {
-    try {
-      var doc = window.parent.document;
-      var el = doc.getElementById('_stTickFix');
-      if (!el) { el = doc.createElement('style'); el.id = '_stTickFix'; }
-      el.textContent = CSS;
-      doc.head.appendChild(el);   /* appendChild moves if already in DOM */
-    } catch (e) {}
-  }
-  ensureLast();
-  setInterval(ensureLast, 250);
-})();
-</script>""", height=0)
-
 st.sidebar.header("Initial Conditions")
 st.sidebar.caption("Absolute tank height (cm)")
 
-def _slider_ss(label, lo, hi, default, step, ss, key):
-    """Native slider with SS value embedded in the label."""
-    return st.sidebar.slider(f"{label} — SS {ss:.1f}", lo, hi, default, step,
-                             format="%.1f", key=key)
-
 # Slider ranges derived from model variable bounds converted to absolute height
-x1init = _slider_ss("x₁  (Tank 1)", 7.5, 28.0, 19.0, 0.1, XSS[1], "x1init")
-x2init = _slider_ss("x₂  (Tank 2)", 7.5, 28.0,  9.0, 0.1, XSS[2], "x2init")
-x3init = _slider_ss("x₃  (Tank 3)", 3.5, 28.0, 19.2, 0.1, XSS[3], "x3init")
-x4init = _slider_ss("x₄  (Tank 4)", 4.5, 28.0, 16.3, 0.1, XSS[4], "x4init")
+x1init = st.sidebar.slider("x₁", 7.5, 28.0, 19.0, 0.1, format="%.1f", key="x1init")
+x2init = st.sidebar.slider("x₂", 7.5, 28.0,  9.0, 0.1, format="%.1f", key="x2init")
+x3init = st.sidebar.slider("x₃", 3.5, 28.0, 19.2, 0.1, format="%.1f", key="x3init")
+x4init = st.sidebar.slider("x₄", 4.5, 28.0, 16.3, 0.1, format="%.1f", key="x4init")
 
 # Convert absolute heights → deviations for the solver
 z1init = x1init - XSS[1]
