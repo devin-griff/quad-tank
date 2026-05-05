@@ -333,7 +333,7 @@ def build_tank_figure(res):
             wy = water_top_y(tk, heights[tk])
             traces.append(go.Scatter(
                 x=[x0 - WALL, x0 - WALL, x1 + WALL, x1 + WALL, x0 - WALL],
-                y=[y0,        wy,        wy,        y0,        y0       ],
+                y=[y0 - 0.02, wy,        wy,        y0 - 0.02, y0 - 0.02],
                 fill="toself", fillcolor=col, mode="none", line=dict(width=0),
                 hovertemplate=f"Tank {tk}: {heights[tk]:.1f} cm<extra></extra>",
                 showlegend=False,
