@@ -33,13 +33,6 @@ section[data-testid="stSidebar"] {
     user-select: none;
     -webkit-user-select: none;
 }
-section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBar"],
-section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBarMin"],
-section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBarMax"] {
-    opacity: 1 !important;
-    visibility: visible !important;
-    color: inherit !important;
-}
 .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: 0.6rem !important;
@@ -52,8 +45,8 @@ st.sidebar.header("Initial Conditions")
 st.sidebar.caption("Absolute tank height (cm)")
 
 def _slider_ss(label, lo, hi, default, step, ss, key):
-    """Native slider with SS value embedded in the label."""
-    return st.sidebar.slider(f"{label} — SS {ss:.1f}", lo, hi, default, step,
+    """Native slider with range and SS value embedded in the label."""
+    return st.sidebar.slider(f"{label}  [{lo}–{hi}]  SS {ss:.1f}", lo, hi, default, step,
                              format="%.1f", key=key)
 
 # Slider ranges derived from model variable bounds converted to absolute height
