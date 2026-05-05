@@ -48,7 +48,7 @@ section[data-testid="stSidebar"] {
 components.html("""<script>
 (function () {
   var CSS = '[data-testid="stTickBarMin"],[data-testid="stTickBarMax"]'
-          + '{opacity:1!important;visibility:visible!important;}';
+          + '{opacity:1!important;visibility:visible!important;color:rgba(49,51,63,0.6)!important;}';
   function ensureLast() {
     try {
       var doc = window.parent.document;
