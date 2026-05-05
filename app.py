@@ -54,7 +54,7 @@ def _slider_ss(label, lo, hi, default, step, ss):
     pct = (ss - lo) / (hi - lo) * 100
     val = st.sidebar.slider(label, lo, hi, default, step)
     st.sidebar.markdown(
-        f'<div style="position:relative;height:18px;margin-top:-10px;margin-bottom:6px;">'
+        f'<div style="position:relative;height:16px;margin-top:-30px;margin-bottom:14px;">'
         f'<span style="position:absolute;left:{pct:.1f}%;'
         f'transform:translateX(-50%);font-size:13px;'
         f'color:#cc0000;font-weight:600;line-height:1;">▲{ss:.1f}</span>'
