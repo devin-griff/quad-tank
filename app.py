@@ -579,7 +579,7 @@ def build_tank_figure(res):
         data=make_traces(actual[0], 0),
         frames=frames,
         layout=go.Layout(
-            title=dict(text="Quad Tank System", font=dict(size=17)),
+            title=dict(text="Quad Tank - Open Loop Dynamic Optimization", font=dict(size=17)),
             xaxis=dict(visible=False, range=[-1.0, 11.0]),
             yaxis=dict(visible=False, range=[-0.1, 7.8],
                        scaleanchor="x", scaleratio=1),
