@@ -4,7 +4,8 @@ import pyomo.environ as pyo
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="Quad Tank System", layout="wide")
+st.set_page_config(page_title="Quad Tank System", layout="wide",
+                   initial_sidebar_state="expanded")
 
 @st.cache_resource
 def _get_ipopt_path():
@@ -37,9 +38,10 @@ section[data-testid="stSidebar"] [data-testid="stSlider"] * {
 section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBar"] {
     display: none !important;
 }
-/* Hide only the toolbar (Deploy button etc.), keep header for sidebar toggle */
-[data-testid="stToolbar"] { display: none !important; }
-[data-testid="stDecoration"] { display: none !important; }
+/* Hide header and sidebar toggle buttons */
+header[data-testid="stHeader"] { display: none !important; }
+[data-testid="stSidebarCollapseButton"] { display: none !important; }
+[data-testid="collapsedControl"] { display: none !important; }
 /* Reduce block container top padding */
 .block-container,
 [data-testid="stMainBlockContainer"] {
