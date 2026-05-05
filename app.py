@@ -48,14 +48,16 @@ def _slider_ss(label, lo, hi, default, step, ss):
     """Slider with native label/value; replaces tick bar with our own lo / ▲ss / hi row."""
     pct = (ss - lo) / (hi - lo) * 100
     val = st.sidebar.slider(label, lo, hi, default, step)
-    # Overlap exactly where the (hidden) tick bar was: top=50.7px from slider top.
-    # Slider total height ≈ 82px → margin-top to reach tick bar = -(82-50.7) ≈ -32px
+    # margin-top: slider was 82px with tick bar; now 50.7px without → -46+(82-51)=-14px
+    # Horizontal: center only the ▲ glyph at pct%, put the number to its right separately
     st.sidebar.markdown(
         f'<div style="position:relative;font-size:12px;color:#555;'
-        f'margin-top:2px;margin-bottom:8px;">'
+        f'margin-top:-14px;margin-bottom:22px;">'
         f'<span>{lo}</span>'
         f'<span style="position:absolute;left:{pct:.1f}%;transform:translateX(-50%);'
-        f'color:#cc0000;font-weight:600;">▲{ss:.1f}</span>'
+        f'color:#cc0000;font-weight:700;font-size:13px;line-height:1;">▲</span>'
+        f'<span style="position:absolute;left:calc({pct:.1f}% + 6px);'
+        f'color:#cc0000;font-weight:600;font-size:11px;white-space:nowrap;">{ss:.1f}</span>'
         f'<span style="float:right;">{hi}</span>'
         f'</div>',
         unsafe_allow_html=True)
