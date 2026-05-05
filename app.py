@@ -29,10 +29,6 @@ MAX_H = 30.0  # display ceiling for all tanks (cm)
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Hide Streamlit's native range numbers — we render our own with the SS marker */
-section[data-testid="stSidebar"] [data-testid="stTickBar"] {
-    display: none !important;
-}
 .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: 0.6rem !important;
@@ -42,23 +38,17 @@ section[data-testid="stSidebar"] [data-testid="stTickBar"] {
 """, unsafe_allow_html=True)
 
 st.sidebar.header("Initial Conditions")
-st.sidebar.caption("Absolute tank height (cm) — ▲ shows steady state")
+st.sidebar.caption("Absolute tank height (cm)")
 
 def _slider_ss(label, lo, hi, default, step, ss):
-    """Slider with native label/value; replaces tick bar with our own lo / ▲ss / hi row."""
+    """Native slider with SS in label; thin bar below shows SS position visually."""
     pct = (ss - lo) / (hi - lo) * 100
-    val = st.sidebar.slider(label, lo, hi, default, step, format="%.1f")
-    # margin-top: slider was 82px with tick bar; now 50.7px without → -46+(82-51)=-14px
-    # Horizontal: center only the ▲ glyph at pct%, put the number to its right separately
+    val = st.sidebar.slider(f"{label} — SS {ss:.1f}", lo, hi, default, step, format="%.1f")
     st.sidebar.markdown(
-        f'<div style="position:relative;font-size:12px;color:#555;'
-        f'margin-top:-10px;margin-bottom:22px;">'
-        f'<span>{lo}</span>'
-        f'<span style="position:absolute;left:{pct:.1f}%;transform:translateX(-50%);'
-        f'color:#cc0000;font-weight:700;font-size:16px;line-height:1;">▲</span>'
-        f'<span style="position:absolute;left:calc({pct:.1f}% + 8px);'
-        f'color:#cc0000;font-weight:600;font-size:13px;white-space:nowrap;">{ss:.1f}</span>'
-        f'<span style="float:right;">{hi}</span>'
+        f'<div style="position:relative;height:4px;background:#ddd;'
+        f'border-radius:2px;margin:2px 0 14px 0;">'
+        f'<div style="position:absolute;left:calc({pct:.1f}% - 1px);'
+        f'top:0;width:2px;height:4px;background:#cc0000;border-radius:1px;"></div>'
         f'</div>',
         unsafe_allow_html=True)
     return val
