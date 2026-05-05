@@ -37,8 +37,9 @@ section[data-testid="stSidebar"] [data-testid="stSlider"] * {
 section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBar"] {
     display: none !important;
 }
-/* Remove Streamlit top header bar */
-header[data-testid="stHeader"] { display: none !important; }
+/* Hide only the toolbar (Deploy button etc.), keep header for sidebar toggle */
+[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
 /* Reduce block container top padding */
 .block-container,
 [data-testid="stMainBlockContainer"] {
