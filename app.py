@@ -1,0 +1,741 @@
+import streamlit as st
+import streamlit.components.v1 as components
+import pyomo.environ as pyo
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+st.set_page_config(page_title="Quad Tank System", layout="wide")
+
+@st.cache_resource
+def _ensure_ipopt():
+    """Download IPOPT via IDAES on first run (Linux / Streamlit Cloud only)."""
+    import os, sys, subprocess
+    if sys.platform != 'win32':
+        linux_path = os.path.expanduser("~/.idaes/bin/ipopt")
+        if not os.path.exists(linux_path):
+            subprocess.run(["idaes", "get-extensions"], check=True)
+
+_ensure_ipopt()
+st.markdown(
+    '<h2 style="margin:0 0 0.15rem 0;padding:0;font-size:1.4rem;font-weight:700;">'
+    'Quad Tank — Open Loop Dynamic Optimization</h2>',
+    unsafe_allow_html=True,
+)
+
+XSS = {1: 14.0, 2: 14.0, 3: 14.2, 4: 21.3}
+MAX_H = 30.0  # display ceiling for all tanks (cm)
+
+# ── Sidebar ──────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* Prevent text selection on slider number lines and thumb labels */
+section[data-testid="stSidebar"] [data-testid="stSlider"] * {
+    user-select: none;
+    -webkit-user-select: none;
+}
+/* Remove Streamlit top header bar */
+header[data-testid="stHeader"] { display: none !important; }
+/* Reduce block container top padding */
+.block-container,
+[data-testid="stMainBlockContainer"] {
+    padding-top: 0.6rem !important;
+    padding-bottom: 0rem !important;
+}
+/* Tighten the page title */
+h1 { margin-top: 0 !important; padding-top: 0 !important; margin-bottom: 0.25rem !important; }
+</style>
+""", unsafe_allow_html=True)
+
+st.sidebar.header("Initial Conditions")
+st.sidebar.caption("Absolute tank height (cm) — red marker shows steady state")
+
+def _slider_ss(label, lo, hi, default, step, ss):
+    """Slider in absolute units with a red ▲ SS marker touching the track.
+    Renders a custom label + marker above the track, then the slider itself
+    with label_visibility='collapsed' so the track starts immediately below."""
+    pct = (ss - lo) / (hi - lo) * 100
+    st.sidebar.markdown(
+        # Widget label (matches Streamlit's default label style)
+        f'<p style="font-size:14px;font-weight:600;margin:0 0 25px 0;">'
+        f'{label}</p>'
+        # Marker row: sits between the label and the track
+        f'<div style="position:relative;height:30px;margin-bottom:-55px;">'
+        f'<span style="position:absolute;top:20px;left:{pct:.1f}%;'
+        f'transform:translateX(-50%);font-size:13px;'
+        f'color:#cc0000;line-height:1;font-weight:600;">▲{ss:.1f}</span>'
+        f'</div>',
+        unsafe_allow_html=True)
+    return st.sidebar.slider(label, lo, hi, default, step,
+                             label_visibility="collapsed")
+
+# Slider ranges derived from model variable bounds converted to absolute height
+x1init = _slider_ss("x₁  (Tank 1)", 7.5, 28.0, 19.0, 0.1, XSS[1])
+x2init = _slider_ss("x₂  (Tank 2)", 7.5, 28.0,  9.0, 0.1, XSS[2])
+x3init = _slider_ss("x₃  (Tank 3)", 3.5, 28.0, 19.2, 0.1, XSS[3])
+x4init = _slider_ss("x₄  (Tank 4)", 4.5, 28.0, 16.3, 0.1, XSS[4])
+
+# Convert absolute heights → deviations for the solver
+z1init = x1init - XSS[1]
+z2init = x2init - XSS[2]
+z3init = x3init - XSS[3]
+z4init = x4init - XSS[4]
+
+solve_btn = st.sidebar.button("Solve Optimization", type="primary", use_container_width=True)
+
+# ── Solver ────────────────────────────────────────────────────────────────────
+def solve_model(zi):
+    m = pyo.ConcreteModel()
+    N, ncp = 15, 3
+    m.i   = pyo.Set(initialize=pyo.RangeSet(0, N-1))
+    m.ii  = pyo.Set(initialize=pyo.RangeSet(1, N))
+    m.iii = pyo.Set(initialize=pyo.RangeSet(0, N))
+    m.c   = pyo.Set(initialize=pyo.RangeSet(1, ncp))
+    m.t   = pyo.Set(initialize=pyo.RangeSet(1, 4))
+
+    m.z10 = pyo.Var(pyo.RangeSet(0, N))
+    m.z20 = pyo.Var(pyo.RangeSet(0, N))
+    m.z30 = pyo.Var(pyo.RangeSet(0, N))
+    m.z40 = pyo.Var(pyo.RangeSet(0, N))
+    m.z1  = pyo.Var(m.i, m.c, bounds=(-6.5, 14))
+    m.z2  = pyo.Var(m.i, m.c, bounds=(-6.5, 14))
+    m.z3  = pyo.Var(m.i, m.c, bounds=(-10.7, 13.8))
+    m.z4  = pyo.Var(m.i, m.c, bounds=(-16.8, 6.7))
+    m.z1dot = pyo.Var(m.i, m.c)
+    m.z2dot = pyo.Var(m.i, m.c)
+    m.z3dot = pyo.Var(m.i, m.c)
+    m.z4dot = pyo.Var(m.i, m.c)
+    m.v1  = pyo.Var(m.i, bounds=(-43.4, 16.6))
+    m.v2  = pyo.Var(m.i, bounds=(-35.4, 24.6))
+    m.track = pyo.Var(within=pyo.NonNegativeReals)
+
+    m.smalla = pyo.Param(m.t, initialize={1: .233, 2: .242, 3: .127, 4: .127})
+    m.biga   = pyo.Param(m.t, initialize={1: 50.27, 2: 50.27, 3: 28.27, 4: 28.27})
+    m.xss    = pyo.Param(m.t, initialize={1: 14, 2: 14, 3: 14.2, 4: 21.3})
+    m.uss    = pyo.Param(pyo.RangeSet(1, 2), initialize={1: 43.4, 2: 35.4})
+    m.g      = pyo.Param(initialize=981)
+    m.gamma  = pyo.Param(initialize=.4)
+    m.h      = pyo.Param(initialize=10)
+    omega_data = {
+        (1,1): 0.19681547722366, (1,2): 0.39442431473909, (1,3): 0.37640306270047,
+        (2,1): -0.06553542585020, (2,2): 0.29207341166523, (2,3): 0.51248582618842,
+        (3,1): 0.02377097434822,  (3,2): -0.04154875212600, (3,3): 0.11111111111111,
+    }
+    m.omega  = pyo.Param(m.c, m.c, initialize=omega_data)
+    m.z1init = pyo.Param(initialize=zi[0])
+    m.z2init = pyo.Param(initialize=zi[1])
+    m.z3init = pyo.Param(initialize=zi[2])
+    m.z4init = pyo.Param(initialize=zi[3])
+
+    def z1dot_def(m, i, c):
+        return m.z1dot[i,c] == (
+            -(m.smalla[1]/m.biga[1])*pyo.sqrt(2*m.g*(m.z1[i,c]+m.xss[1]))
+            +(m.smalla[3]/m.biga[1])*pyo.sqrt(2*m.g*(m.z3[i,c]+m.xss[3]))
+            +(m.gamma/m.biga[1])*(m.v1[i]+m.uss[1]))
+    m.z1dot_con = pyo.Constraint(m.i, m.c, rule=z1dot_def)
+
+    def z2dot_def(m, i, c):
+        return m.z2dot[i,c] == (
+            -(m.smalla[2]/m.biga[2])*pyo.sqrt(2*m.g*(m.z2[i,c]+m.xss[2]))
+            +(m.smalla[4]/m.biga[2])*pyo.sqrt(2*m.g*(m.z4[i,c]+m.xss[4]))
+            +(m.gamma/m.biga[2])*(m.v2[i]+m.uss[2]))
+    m.z2dot_con = pyo.Constraint(m.i, m.c, rule=z2dot_def)
+
+    def z3dot_def(m, i, c):
+        return m.z3dot[i,c] == (
+            -(m.smalla[3]/m.biga[3])*pyo.sqrt(2*m.g*(m.z3[i,c]+m.xss[3]))
+            +((1-m.gamma)/m.biga[3])*(m.v2[i]+m.uss[2]))
+    m.z3dot_con = pyo.Constraint(m.i, m.c, rule=z3dot_def)
+
+    def z4dot_def(m, i, c):
+        return m.z4dot[i,c] == (
+            -(m.smalla[4]/m.biga[4])*pyo.sqrt(2*m.g*(m.z4[i,c]+m.xss[4]))
+            +((1-m.gamma)/m.biga[4])*(m.v1[i]+m.uss[1]))
+    m.z4dot_con = pyo.Constraint(m.i, m.c, rule=z4dot_def)
+
+    def z1_def(m, i, c):
+        return m.z1[i,c] == m.z10[i] + m.h*sum(m.omega[k,c]*m.z1dot[i,k] for k in m.c)
+    m.z1_con = pyo.Constraint(m.i, m.c, rule=z1_def)
+
+    def z2_def(m, i, c):
+        return m.z2[i,c] == m.z20[i] + m.h*sum(m.omega[k,c]*m.z2dot[i,k] for k in m.c)
+    m.z2_con = pyo.Constraint(m.i, m.c, rule=z2_def)
+
+    def z3_def(m, i, c):
+        return m.z3[i,c] == m.z30[i] + m.h*sum(m.omega[k,c]*m.z3dot[i,k] for k in m.c)
+    m.z3_con = pyo.Constraint(m.i, m.c, rule=z3_def)
+
+    def z4_def(m, i, c):
+        return m.z4[i,c] == m.z40[i] + m.h*sum(m.omega[k,c]*m.z4dot[i,k] for k in m.c)
+    m.z4_con = pyo.Constraint(m.i, m.c, rule=z4_def)
+
+    m.z10_con = pyo.Constraint(m.ii, rule=lambda m, ii: m.z10[ii] == m.z1[ii-1, ncp])
+    m.z20_con = pyo.Constraint(m.ii, rule=lambda m, ii: m.z20[ii] == m.z2[ii-1, ncp])
+    m.z30_con = pyo.Constraint(m.ii, rule=lambda m, ii: m.z30[ii] == m.z3[ii-1, ncp])
+    m.z40_con = pyo.Constraint(m.ii, rule=lambda m, ii: m.z40[ii] == m.z4[ii-1, ncp])
+
+    m.z1init_con = pyo.Constraint(expr=m.z10[0] == m.z1init)
+    m.z2init_con = pyo.Constraint(expr=m.z20[0] == m.z2init)
+    m.z3init_con = pyo.Constraint(expr=m.z30[0] == m.z3init)
+    m.z4init_con = pyo.Constraint(expr=m.z40[0] == m.z4init)
+
+    m.track_con = pyo.Constraint(
+        expr=m.track == sum(m.z10[i]**2 + m.z20[i]**2 + m.z30[i]**2 + m.z40[i]**2 for i in m.iii))
+    m.obj = pyo.Objective(expr=m.track, sense=pyo.minimize)
+
+    import os, sys
+    _win_ipopt   = r'C:\Users\Devin\AppData\Local\idaes\bin\ipopt.exe'
+    _linux_ipopt = os.path.expanduser("~/.idaes/bin/ipopt")
+    if sys.platform == 'win32' and os.path.exists(_win_ipopt):
+        solver = pyo.SolverFactory('ipopt', executable=_win_ipopt)
+    elif os.path.exists(_linux_ipopt):
+        solver = pyo.SolverFactory('ipopt', executable=_linux_ipopt)
+    else:
+        solver = pyo.SolverFactory('ipopt')
+    result = solver.solve(m, tee=False)
+    status = str(result.solver.termination_condition)
+
+    t_pts = list(m.iii)
+    return {
+        "status": status,
+        "t": [k * 10 for k in t_pts],
+        "z10": [pyo.value(m.z10[i]) for i in t_pts],
+        "z20": [pyo.value(m.z20[i]) for i in t_pts],
+        "z30": [pyo.value(m.z30[i]) for i in t_pts],
+        "z40": [pyo.value(m.z40[i]) for i in t_pts],
+        "v1": [pyo.value(m.v1[i]) for i in m.i],
+        "v2": [pyo.value(m.v2[i]) for i in m.i],
+    }
+
+
+# ── Animated schematic ────────────────────────────────────────────────────────
+def build_tank_figure(res):
+    """Animated schematic matching the quad-tank physical layout."""
+    import math as _m
+
+    # ── coordinate layout ────────────────────────────────────────────────────
+    # Compact y-coordinates so the data aspect ratio suits a normal screen.
+    # x range ≈ 12 units wide, y range ≈ 7.4 units tall → ~0.62 aspect ratio.
+    # Tank boundaries: (x_left, y_bottom, x_right, y_top)
+    TB = {
+        1: (1.2, 1.5, 4.8, 3.7),   # bottom-left  (large) — raised for visible drain gap
+        2: (5.2, 1.5, 8.8, 3.7),   # bottom-right (large) — raised for visible drain gap
+        3: (1.2, 4.6, 4.8, 6.4),   # top-left     (small)
+        4: (5.2, 4.6, 8.8, 6.4),   # top-right    (small)
+    }
+
+    DISP_MAX  = 30.0   # cm — full-scale height for display
+    PW        = 0.13   # pipe half-width
+    WALL      = 0.12   # tank wall thickness
+    TOP_Y_U1  = 7.15   # u1 overhead pipe centre y  (u1 left → T4 right, higher)
+    TOP_Y_U2  = 6.68   # u2 overhead pipe centre y  (u2 right → T3 left, lower)
+    GAMMA_Y   = 3.95   # γ valve centre y  (in the gap between upper/lower tanks)
+    RES_TOP   = 0.82   # top of reservoir
+
+    # Outer (pump) pipe x positions
+    LP = 0.42;  RP = 9.58
+
+    # Left side — γ feed on the LEFT (close to pump), drain on the RIGHT
+    # so the γ₁ horizontal branch (LP → LX_P) never crosses the drain pipe.
+    LX_P = 1.8   # pump-direct — γ₁ fraction of u₁ ↓ Tank 1  (left side of tank)
+    LX_D = 3.2   # drain pipe  — Tank 3 ↓ Tank 1, top-feed ↓ Tank 3 (right side)
+
+    # Right side — mirror: γ feed on the RIGHT (close to pump), drain on the LEFT
+    RX_P = 8.2   # pump-direct — γ₂ fraction of u₂ ↓ Tank 2  (right side of tank)
+    RX_D = 6.8   # drain pipe  — Tank 4 ↓ Tank 2, top-feed ↓ Tank 4 (left side)
+
+    # ── physics constants ────────────────────────────────────────────────────
+    _G    = 981
+    _SA   = {1: .233, 2: .242, 3: .127, 4: .127}  # nozzle areas
+    _GAMA = 0.4
+    _USS  = {1: 43.4, 2: 35.4}
+
+    # ── pump gauge constants ─────────────────────────────────────────────────
+    # Gauge bars sit to the outside of the diagram (left of u₁, right of u₂).
+    # u_actual = v + USS;  max possible = USS + upper_v_bound
+    _U_MAX  = {1: 60.0, 2: 60.0}   # v1 ≤ 16.6 → u1 ≤ 60; v2 ≤ 24.6 → u2 ≤ 60
+    GX  = {1: (-0.95, -0.45),       # (x_left, x_right) for u₁ gauge
+           2: (10.45,  10.95)}      # mirrored, width 0.50
+    GH  = 1.80                      # gauge height (in data units)
+    # Centre gauge vertically around the pump circle mid-point
+    # PY = (RES_TOP + GAMMA_Y) / 2 = (0.82 + 3.95) / 2 = 2.385
+    GY0 = (RES_TOP + GAMMA_Y) / 2 - GH / 2   # ≈ 1.485
+
+    # ── compute flow rates at each time step ─────────────────────────────────
+    # All flows expressed as physical volumetric rates:
+    #   drain_i  = SA_i * sqrt(2g*h_i)         [cm^2.5 s^-1, Torricelli]
+    #   pump_*   = fraction * (v + uss)         [same pump units as model]
+    # We normalise drains and pump flows separately so both are legible.
+
+    t_pts = res["t"]
+    n_pts = len(t_pts)
+
+    actual = [
+        {1: res["z10"][k] + XSS[1],
+         2: res["z20"][k] + XSS[2],
+         3: res["z30"][k] + XSS[3],
+         4: res["z40"][k] + XSS[4]}
+        for k in range(n_pts)
+    ]
+
+    drain   = {i: [] for i in range(1, 5)}   # Torricelli outflows
+    p_dir   = {i: [] for i in (1, 2)}        # γ × u → Tank 1/2 directly
+    p_top   = {i: [] for i in (3, 4)}        # (1-γ) × u → Tank 3/4 via top pipe
+
+    for k in range(n_pts):
+        vi  = min(k, len(res["v1"]) - 1)
+        h   = {i: actual[k][i] for i in range(1, 5)}
+        v1k = res["v1"][vi];  v2k = res["v2"][vi]
+
+        for i in range(1, 5):
+            drain[i].append(_SA[i] * _m.sqrt(max(0.0, 2 * _G * h[i])))
+
+        # pump direct: γ fraction from each pump into the paired lower tank
+        # u1 (left pump)  → γ×u1 into Tank 1
+        # u2 (right pump) → γ×u2 into Tank 2
+        p_dir[1].append(max(0.0, _GAMA * (v1k + _USS[1])))
+        p_dir[2].append(max(0.0, _GAMA * (v2k + _USS[2])))
+
+        # pump top: (1-γ) fraction via top bar into upper tanks
+        # u1 → (1-γ)×u1 into Tank 4   (right upper)
+        # u2 → (1-γ)×u2 into Tank 3   (left upper)
+        p_top[4].append(max(0.0, (1 - _GAMA) * (v1k + _USS[1])))
+        p_top[3].append(max(0.0, (1 - _GAMA) * (v2k + _USS[2])))
+
+    max_drain = max(v for d in drain.values() for v in d) or 1.0
+    max_pump  = max(
+        max(v for d in p_dir.values() for v in d),
+        max(v for d in p_top.values() for v in d),
+    ) or 1.0
+
+    # ── flow stream definitions ───────────────────────────────────────────────
+    # All water is the same blue; width encodes flow magnitude.
+    C_WATER = "rgb(28, 108, 215)"
+
+    # SEGS: (flow_dict, key, pipe_x, y_high, y_low, colour, normaliser)
+    SEGS = [
+        # Torricelli drains — water starts at bottom of gray nozzle pipe
+        (drain,  1, LX_D, TB[1][1] - 0.50*(TB[1][1]-RES_TOP), 0.0, C_WATER, max_drain),
+        (drain,  2, RX_D, TB[2][1] - 0.50*(TB[2][1]-RES_TOP), 0.0, C_WATER, max_drain),
+        (drain,  3, LX_D, TB[1][3],  TB[1][1],  C_WATER, max_drain),  # T3 → T1
+        (drain,  4, RX_D, TB[2][3],  TB[2][1],  C_WATER, max_drain),  # T4 → T2
+        # γ direct pump feeds — bottom of feed pipe = top of lower tank
+        (p_dir,  1, LX_P, TB[1][3],  TB[1][1],  C_WATER, max_pump ),  # γ×u1 → T1
+        (p_dir,  2, RX_P, TB[2][3],  TB[2][1],  C_WATER, max_pump ),  # γ×u2 → T2
+        # (1-γ) overhead feeds — bottom of feed pipe = top of upper tank
+        (p_top,  3, LX_D, TB[3][3],  TB[3][1],  C_WATER, max_pump ),  # (1-γ)×u2 → T3
+        (p_top,  4, RX_D, TB[4][3],  TB[4][1],  C_WATER, max_pump ),  # (1-γ)×u1 → T4
+    ]
+
+    # ── helper ───────────────────────────────────────────────────────────────
+    def water_top_y(tk, h):
+        x0, y0, x1, y1 = TB[tk]
+        return y0 + min(1.0, max(0.01, h / DISP_MAX)) * (y1 - y0)
+
+    def stream_rect(xp, y_top, y_bot, hw, color):
+        return go.Scatter(
+            x=[xp-hw, xp-hw, xp+hw, xp+hw, xp-hw],
+            y=[y_bot,  y_top,  y_top,  y_bot,  y_bot],
+            fill="toself", fillcolor=color,
+            mode="none",
+            line=dict(width=0),
+            showlegend=False, hoverinfo="skip",
+        )
+
+    def make_traces(heights, step):
+        traces = []
+
+        # Water fill in each tank — same blue for all
+        for tk, col in [(1, "rgb(28, 108, 215)"),
+                        (2, "rgb(28, 108, 215)"),
+                        (3, "rgb(28, 108, 215)"),
+                        (4, "rgb(28, 108, 215)")]:
+            x0, y0, x1, _ = TB[tk]
+            wy = water_top_y(tk, heights[tk])
+            traces.append(go.Scatter(
+                x=[x0 - WALL, x0 - WALL, x1 + WALL, x1 + WALL, x0 - WALL],
+                y=[y0 - WALL, wy,        wy,        y0 - WALL, y0 - WALL],
+                fill="toself", fillcolor=col, mode="none", line=dict(width=0),
+                hovertemplate=f"Tank {tk}: {heights[tk]:.1f} cm<extra></extra>",
+                showlegend=False,
+            ))
+
+        # Flow streams — width proportional to physical flow rate
+        for fd, key, xp, y_top, y_bot, col, norm in SEGS:
+            hw = PW * (0.12 + 0.88 * min(1.0, fd[key][step] / norm))
+            traces.append(stream_rect(xp, y_top, y_bot, hw, col))
+
+        # ── pump gauge fills (animated) ──────────────────────────────────────
+        vi = min(step, len(res["v1"]) - 1)
+        u_actual = {1: res["v1"][vi] + _USS[1],
+                    2: res["v2"][vi] + _USS[2]}
+        for pump in (1, 2):
+            gx0, gx1 = GX[pump]
+            frac = max(0.0, min(1.0, u_actual[pump] / _U_MAX[pump]))
+            gy1  = GY0 + frac * GH
+            # filled bar
+            traces.append(go.Scatter(
+                x=[gx0, gx0, gx1, gx1, gx0],
+                y=[GY0,  gy1,  gy1,  GY0,  GY0],
+                fill="toself", fillcolor="rgb(28, 108, 215)",
+                mode="none", line=dict(width=0),
+                showlegend=False, hoverinfo="skip",
+            ))
+            # current-value label at top of bar
+            traces.append(go.Scatter(
+                x=[(gx0 + gx1) / 2],
+                y=[max(gy1 + 0.12, GY0 + 0.22)],
+                mode="text",
+                text=[f"{u_actual[pump]:.1f}"],
+                textfont=dict(size=14, color="#0d0d3a"),
+                showlegend=False, hoverinfo="skip",
+            ))
+
+        # Water-level labels — follow water surface, shifted toward diagram centre
+        # to avoid internal pipes (LX_D=3.2 left, RX_D=6.8 right).
+        traces.append(go.Scatter(
+            x=[4.0, 6.0, 4.0, 6.0],   # inner half of each tank (toward centre x=5)
+            y=[water_top_y(k, heights[k]) + 0.12 for k in range(1, 5)],
+            mode="text",
+            text=[f"x₁={heights[1]:.1f}",
+                  f"x₂={heights[2]:.1f}",
+                  f"x₃={heights[3]:.1f}",
+                  f"x₄={heights[4]:.1f}"],
+            textfont=dict(size=14, color="#0d0d3a"),
+            showlegend=False, hoverinfo="skip",
+        ))
+        return traces
+
+    frames = [go.Frame(name=str(k), data=make_traces(actual[k], k))
+              for k in range(n_pts)]
+
+    # ── static shapes ─────────────────────────────────────────────────────────
+    PC = "#6b6b6b"   # unified gray for all structural elements (pipes + tank walls)
+
+    def pipe(x0, y0, x1, y1, color=PC):
+        return dict(type="rect", x0=x0, y0=y0, x1=x1, y1=y1,
+                    fillcolor=color, line=dict(width=0), layer="below")
+
+    shapes = []
+
+    # Reservoir
+    shapes.append(dict(type="rect", x0=0.0, y0=0.0, x1=10.0, y1=RES_TOP,
+                       fillcolor="rgb(28, 108, 215)", line=dict(color="#4a7a9b", width=2)))
+
+    # Tank walls (open-top U-shape: left, right, bottom slabs)
+    for tk, (x0, y0, x1, y1) in TB.items():
+        wc = PC
+        shapes += [
+            dict(type="rect", x0=x0-WALL, y0=y0-WALL, x1=x0,       y1=y1,  fillcolor=wc, line=dict(width=0)),
+            dict(type="rect", x0=x1,       y0=y0-WALL, x1=x1+WALL,  y1=y1,  fillcolor=wc, line=dict(width=0)),
+            dict(type="rect", x0=x0-WALL, y0=y0-WALL, x1=x1+WALL,  y1=y0,  fillcolor=wc, line=dict(width=0)),
+        ]
+
+    # ── pipes (layer=below) ───────────────────────────────────────────────────
+
+    # Left outer pipe: u1 rises to TOP_Y_U1 (higher overhead)
+    shapes.append(pipe(LP-PW, RES_TOP, LP+PW, TOP_Y_U1+PW))
+    # Right outer pipe: u2 rises to TOP_Y_U2 (lower overhead)
+    shapes.append(pipe(RP-PW, RES_TOP, RP+PW, TOP_Y_U2+PW))
+
+    # Overhead pipe A — u1 (left pump) → Tank 4 (right upper): higher pipe
+    shapes.append(pipe(LP-PW,   TOP_Y_U1-PW, RX_D+PW, TOP_Y_U1+PW))   # horizontal LP→RX_D
+    shapes.append(pipe(RX_D-PW, TB[4][3]-0.02, RX_D+PW, TOP_Y_U1+PW)) # drop into T4 (overlap into horizontal to close gap)
+
+    # Overhead pipe B — u2 (right pump) → Tank 3 (left upper): lower pipe
+    shapes.append(pipe(LX_D-PW, TOP_Y_U2-PW, RP+PW,   TOP_Y_U2+PW))   # horizontal LX_D→RP
+    shapes.append(pipe(LX_D-PW, TB[3][3]-0.02, LX_D+PW, TOP_Y_U2+PW)) # drop into T3 (overlap into horizontal to close gap)
+
+    # Inter-tank drain pipes (between upper and lower tanks)
+    shapes.append(pipe(LX_D-PW, TB[1][3]-0.02, LX_D+PW, TB[3][1]+0.02))  # T3 → T1
+    shapes.append(pipe(RX_D-PW, TB[2][3]-0.02, RX_D+PW, TB[4][1]+0.02))  # T4 → T2
+
+    # Tank 1/2 bottom drain pipes — shortened to ~25% so water stream is visible below
+    _drain_bot = TB[1][1] - 0.50 * (TB[1][1] - RES_TOP)   # ≈ 1.16
+    shapes.append(pipe(LX_D-PW, _drain_bot, LX_D+PW, TB[1][1]+0.02))
+    shapes.append(pipe(RX_D-PW, _drain_bot, RX_D+PW, TB[2][1]+0.02))
+
+    # γ₁ branch: LP → LX_P (branch stays left of drain pipe, no crossing)
+    shapes.append(pipe(LP+PW,   GAMMA_Y-PW, LX_P+PW, GAMMA_Y+PW))   # horizontal
+    shapes.append(pipe(LX_P-PW, TB[1][3]-0.02, LX_P+PW, GAMMA_Y+PW))  # vertical drop
+
+    # γ₂ branch: RX_P → RP (branch stays right of drain pipe, no crossing)
+    shapes.append(pipe(RX_P-PW, GAMMA_Y-PW, RP-PW,   GAMMA_Y+PW))   # horizontal
+    shapes.append(pipe(RX_P-PW, TB[2][3]-0.02, RX_P+PW, GAMMA_Y+PW))  # vertical drop
+
+    # γ valve symbols — P&ID control valve: 4-armed cross at (cx, cy)
+    #   Outer arm : D-shaped semicircle (curves LEFT for γ₁, RIGHT for γ₂)
+    #   Inner arm : hollow triangle  (◀ for γ₁, ▶ for γ₂)
+    #   Top arm   : hollow triangle  ▽ (base at top,    tip at centre)
+    #   Bottom arm: hollow triangle  △ (base at bottom, tip at centre)
+    VW = 0.36        # arm length  centre → tip / base
+    VH = 0.20        # arm half-width = semicircle radius (skinnier triangles)
+    BG = "#f8fafd"   # hollow fill matches plot background
+    LS = dict(color="#1a1a1a", width=1.8)
+
+    for idx, vx in enumerate([LP, RP]):
+        cx, cy = vx, GAMMA_Y
+
+        # Background mask — hides the grey pipe in the gaps between triangle arms.
+        # Drawn first (below triangles in the above-layer render order) so that
+        # pipes appear to enter the symbol and stop at its edge.
+        # Mask sized to exactly the arm length — pipe is visible right up to the
+        # triangle edges but hidden in the gaps between arms.
+        shapes.append(dict(type="rect",
+            x0=cx-VW, y0=cy-VW, x1=cx+VW, y1=cy+VW,
+            fillcolor=BG, line=dict(width=0)))
+
+        # Outer arm — stem line + D-shaped semicircle at the end.
+        # The stem runs from the triangle intersection (cx,cy) outward,
+        # and the semicircle sits at the far end of the stem.
+        K  = 0.5523   # bezier quarter-circle approximation constant
+        r  = VH       # semicircle radius
+        if idx == 0:  # γ₁: stem goes LEFT, semicircle curves LEFT
+            ex = cx - VW              # semicircle centre x
+            sc = (f"M {ex:.4f} {cy+r:.4f} "
+                  f"C {ex-r*K:.4f} {cy+r:.4f} {ex-r:.4f} {cy+r*K:.4f} {ex-r:.4f} {cy:.4f} "
+                  f"C {ex-r:.4f} {cy-r*K:.4f} {ex-r*K:.4f} {cy-r:.4f} {ex:.4f} {cy-r:.4f} Z")
+        else:         # γ₂: stem goes RIGHT, semicircle curves RIGHT
+            ex = cx + VW              # semicircle centre x
+            sc = (f"M {ex:.4f} {cy+r:.4f} "
+                  f"C {ex+r*K:.4f} {cy+r:.4f} {ex+r:.4f} {cy+r*K:.4f} {ex+r:.4f} {cy:.4f} "
+                  f"C {ex+r:.4f} {cy-r*K:.4f} {ex+r*K:.4f} {cy-r:.4f} {ex:.4f} {cy-r:.4f} Z")
+        # Stem line: intersection → semicircle flat edge
+        shapes.append(dict(type="line",
+            x0=cx, y0=cy, x1=ex, y1=cy, line=LS))
+        shapes.append(dict(type="path", path=sc, fillcolor=BG, line=LS))
+
+        # Inner arm — hollow triangle (base on inner side, tip at centre)
+        bx = cx + VW if idx == 0 else cx - VW   # base x
+        shapes.append(dict(type="path",
+            path=(f"M {bx:.4f} {cy+VH:.4f} "
+                  f"L {cx:.4f} {cy:.4f} "
+                  f"L {bx:.4f} {cy-VH:.4f} Z"),
+            fillcolor=BG, line=LS))
+
+        # Top arm — hollow triangle ▽
+        shapes.append(dict(type="path",
+            path=(f"M {cx-VH:.4f} {cy+VW:.4f} "
+                  f"L {cx:.4f} {cy:.4f} "
+                  f"L {cx+VH:.4f} {cy+VW:.4f} Z"),
+            fillcolor=BG, line=LS))
+
+        # Bottom arm — hollow triangle △
+        shapes.append(dict(type="path",
+            path=(f"M {cx-VH:.4f} {cy-VW:.4f} "
+                  f"L {cx:.4f} {cy:.4f} "
+                  f"L {cx+VH:.4f} {cy-VW:.4f} Z"),
+            fillcolor=BG, line=LS))
+
+    # Pump circles — midway up the pipe from reservoir to valve junction
+    PR = 0.22                              # circle radius (smaller than before)
+    PY = (RES_TOP + GAMMA_Y) / 2          # halfway between reservoir top and γ valve
+    TR = PR                                # circumradius = PR → vertices on circle edge
+    for px in [LP, RP]:
+        # Circle body (white fill hides the grey pipe behind it)
+        shapes.append(dict(type="circle",
+                           x0=px-PR, y0=PY-PR, x1=px+PR, y1=PY+PR,
+                           fillcolor="white", line=dict(color="#333", width=2)))
+        # Hollow triangle inscribed in circle, pointing UP
+        shapes.append(dict(type="path",
+            path=(f"M {px:.4f} {PY+TR:.4f} "
+                  f"L {px+TR*0.866:.4f} {PY-TR*0.5:.4f} "
+                  f"L {px-TR*0.866:.4f} {PY-TR*0.5:.4f} Z"),
+            fillcolor="white", line=dict(color="#333", width=1.5)))
+
+    # ── pump gauge outlines (static) ─────────────────────────────────────────
+    for pump in (1, 2):
+        gx0, gx1 = GX[pump]
+        # gauge body background
+        shapes.append(dict(type="rect", x0=gx0, y0=GY0, x1=gx1, y1=GY0+GH,
+                           fillcolor="rgba(210, 225, 245, 0.55)",
+                           line=dict(color="#555", width=1.5)))
+        # steady-state dashed red line
+        ss_y = GY0 + (_USS[pump] / _U_MAX[pump]) * GH
+        shapes.append(dict(type="line", x0=gx0, y0=ss_y, x1=gx1, y1=ss_y,
+                           line=dict(color="rgba(200, 40, 40, 0.65)", width=1.5, dash="dot")))
+
+    # Steady-state dashed lines inside each tank
+    for tk, ss in XSS.items():
+        x0, y0, x1, y1 = TB[tk]
+        ss_y = y0 + (ss / DISP_MAX) * (y1 - y0)
+        shapes.append(dict(type="line", x0=x0, y0=ss_y, x1=x1, y1=ss_y,
+                           line=dict(color="rgba(200,40,40,0.55)", width=1.5, dash="dot")))
+
+    # ── annotations ───────────────────────────────────────────────────────────
+    annotations = [
+        dict(x=(TB[k][0]+TB[k][2])/2, y=TB[k][1]+0.18,
+             text=f"<b>Tank {k}</b>", showarrow=False,
+             font=dict(size=13, color="#0a0a4e"))
+        for k in range(1, 5)
+    ] + [
+        dict(x=5.0, y=0.35, text="<b>Reservoir</b>", showarrow=False,
+             font=dict(size=13, color="#0a0a4e")),
+        # pump gauge labels — title above, scale endpoints alongside
+        # u labels: midpoint between pump centre and gauge centre, at pump height
+        dict(x=(LP + (GX[1][0]+GX[1][1])/2) / 2,
+             y=(RES_TOP + GAMMA_Y) / 2,
+             text="<b>u₁</b>", showarrow=False, font=dict(size=13, color="#1255a0")),
+        dict(x=(RP + (GX[2][0]+GX[2][1])/2) / 2,
+             y=(RES_TOP + GAMMA_Y) / 2,
+             text="<b>u₂</b>", showarrow=False, font=dict(size=13, color="#1255a0")),
+        dict(x=GX[1][0]-0.06, y=GY0+GH, text="60", showarrow=False,
+             font=dict(size=14, color="#0d0d3a"), xanchor="right"),
+        dict(x=GX[1][0]-0.06, y=GY0,    text="0",  showarrow=False,
+             font=dict(size=14, color="#0d0d3a"), xanchor="right"),
+        dict(x=GX[2][1]+0.06, y=GY0+GH, text="60", showarrow=False,
+             font=dict(size=14, color="#0d0d3a"), xanchor="left"),
+        dict(x=GX[2][1]+0.06, y=GY0,    text="0",  showarrow=False,
+             font=dict(size=14, color="#0d0d3a"), xanchor="left"),
+        dict(x=LP-VW-VH-0.12, y=GAMMA_Y, text="γ₁", showarrow=False,
+             font=dict(size=13, color="#8b0000"), xanchor="right"),
+        dict(x=RP+VW+VH+0.12, y=GAMMA_Y, text="γ₂", showarrow=False,
+             font=dict(size=13, color="#8b0000"), xanchor="left"),
+    ]
+
+    slider_steps = [
+        {"args": [[str(k)], {"frame": {"duration": 0}, "mode": "immediate",
+                              "transition": {"duration": 0}}],
+         "label": f"{t}s", "method": "animate"}
+        for k, t in enumerate(t_pts)
+    ]
+
+    return go.Figure(
+        data=make_traces(actual[0], 0),
+        frames=frames,
+        layout=go.Layout(
+            title=dict(text="Quad Tank System", font=dict(size=17)),
+            xaxis=dict(visible=False, range=[-1.0, 11.0]),
+            yaxis=dict(visible=False, range=[-0.1, 7.8],
+                       scaleanchor="x", scaleratio=1),
+            shapes=shapes,
+            annotations=annotations,
+            height=730,
+            margin=dict(t=40, b=110, l=15, r=15),
+            plot_bgcolor="#f8fafd",
+            paper_bgcolor="#f8fafd",
+            updatemenus=[{
+                "type": "buttons",
+                "x": 0.0, "xanchor": "left", "y": -0.22, "yanchor": "top",
+                "buttons": [
+                    {"label": "⏸  Pause", "method": "animate",
+                     "args": [[None], {"frame": {"duration": 0}, "mode": "immediate"}]},
+                    {"label": "▶  Play", "method": "animate",
+                     "args": [None, {"frame": {"duration": 400, "redraw": True},
+                                     "fromcurrent": True,
+                                     "transition": {"duration": 150}}]},
+                ],
+            }],
+            sliders=[{
+                "active": 0,
+                "steps": slider_steps,
+                "x": 0.0, "len": 1.0,
+                "currentvalue": {"prefix": "Time: ", "suffix": " s",
+                                  "font": {"size": 13}, "xanchor": "center"},
+                "pad": {"t": 55, "b": 10},
+                "transition": {"duration": 0},
+            }],
+        ),
+    )
+
+
+# ── Time-series plots ─────────────────────────────────────────────────────────
+def build_timeseries(res):
+    t  = res["t"]
+    ti = [k * 10 for k in range(len(res["v1"]))]
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=("Tank Levels (deviation from steady-state)", "Pump Inputs"),
+        vertical_spacing=0.18,
+    )
+
+    for key, color, label in [
+        ("z10", "#1565C0", "Tank 1  (x₁)"),
+        ("z20", "#E53935", "Tank 2  (x₂)"),
+        ("z30", "#0288D1", "Tank 3  (x₃)"),
+        ("z40", "#F57C00", "Tank 4  (x₄)"),
+    ]:
+        fig.add_trace(go.Scatter(x=t, y=res[key], name=label,
+                                 line=dict(color=color, width=2),
+                                 hovertemplate=f"{label}: %{{y:.2f}} cm<extra></extra>"),
+                      row=1, col=1)
+
+    fig.add_hline(y=0, line_dash="dot", line_color="gray", row=1, col=1)
+
+    for data, color, label in [
+        (res["v1"], "#6A1B9A", "Pump 1 (u₁)"),
+        (res["v2"], "#2E7D32", "Pump 2 (u₂)"),
+    ]:
+        fig.add_trace(go.Scatter(x=ti, y=data, name=label,
+                                 line=dict(color=color, width=2),
+                                 mode="lines+markers", marker=dict(size=5),
+                                 legend="legend2"),
+                      row=2, col=1)
+
+    fig.update_xaxes(title_text="Time (s)", row=1, col=1)
+    fig.update_xaxes(title_text="Time (s)", row=2, col=1)
+    fig.update_yaxes(title_text="Deviation (cm)", row=1, col=1)
+    fig.update_yaxes(title_text="Flow rate (ml/s)", row=2, col=1)
+    fig.update_layout(
+        height=560, margin=dict(t=50, b=30),
+        plot_bgcolor="white", paper_bgcolor="white",
+        legend=dict(orientation="h", y=1.04, x=0, xanchor="left"),
+        legend2=dict(orientation="h", y=0.42, x=0, xanchor="left",
+                     yanchor="bottom"),
+    )
+    return fig
+
+
+# ── Main layout ───────────────────────────────────────────────────────────────
+if solve_btn:
+    with st.spinner("Running IPOPT optimization..."):
+        try:
+            res = solve_model([z1init, z2init, z3init, z4init])
+        except Exception as e:
+            st.error(f"Solver error: {e}")
+            st.stop()
+
+    st.session_state["res"] = res
+    st.session_state["solve_status"] = res["status"]
+    st.session_state["autoplay"] = True
+    st.rerun()  # clean re-render — lands on Simulation tab, no spinner blocking charts
+
+# Floating toast notification shown once after solve (takes no layout space)
+_status = st.session_state.pop("solve_status", None)
+if _status is not None:
+    if _status != "optimal":
+        st.toast(f"Solver status: {_status} — results may be inaccurate.", icon="⚠️")
+    else:
+        st.toast("Optimal solution found.", icon="✅")
+
+tab_sim, tab_plots = st.tabs(["▶  Simulation", "📈  Plots"])
+
+if "res" in st.session_state:
+    res = st.session_state["res"]
+
+    with tab_sim:
+        st.plotly_chart(build_tank_figure(res), use_container_width=True)
+        # Autoplay only fires on the Simulation tab; rerun always lands here first
+        if st.session_state.pop("autoplay", False):
+            components.html("""
+            <script>
+            setTimeout(function() {
+                const doc = window.parent.document;
+                // Plotly buttons are SVG <g> elements; find the one whose <text> says Play
+                const texts = doc.querySelectorAll('text');
+                for (const t of texts) {
+                    if (t.textContent.trim() === '▶  Play') {
+                        t.parentElement.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                        break;
+                    }
+                }
+            }, 1500);
+            </script>
+            """, height=0)
+
+    with tab_plots:
+        st.plotly_chart(build_timeseries(res), use_container_width=True)
+
+else:
+    with tab_sim:
+        st.info("Set initial conditions in the sidebar and click **Solve Optimization** to begin.")
