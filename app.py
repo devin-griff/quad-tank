@@ -609,6 +609,7 @@ def build_tank_figure(res):
             paper_bgcolor="#f8fafd",
             updatemenus=[{
                 "type": "buttons",
+                "direction": "right",
                 "x": 0.0, "xanchor": "left", "y": -0.22, "yanchor": "top",
                 "buttons": [
                     {"label": "▶  Play", "method": "animate",
