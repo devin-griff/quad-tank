@@ -33,9 +33,12 @@ section[data-testid="stSidebar"] {
     user-select: none;
     -webkit-user-select: none;
 }
-section[data-testid="stSidebar"] [data-testid="stTickBarMin"],
-section[data-testid="stSidebar"] [data-testid="stTickBarMax"] {
+section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBar"],
+section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBarMin"],
+section[data-testid="stSidebar"] [data-testid="stSlider"] [data-testid="stTickBarMax"] {
     opacity: 1 !important;
+    visibility: visible !important;
+    color: inherit !important;
 }
 .block-container,
 [data-testid="stMainBlockContainer"] {
