@@ -1,5 +1,8 @@
 __pycache__/
 *.pyc
 *.pyo
+.ipynb_checkpoints/
+.claude/
+*.tmp.*
 .env
 .streamlit/secrets.toml
