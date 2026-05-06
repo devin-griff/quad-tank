@@ -77,7 +77,7 @@ section[data-testid="stSidebar"] {
 }
 .block-container,
 [data-testid="stMainBlockContainer"] {
-    padding-top: 1.5rem !important;
+    padding-top: 4rem !important;
     padding-bottom: 0rem !important;
 }
 </style>
@@ -868,7 +868,21 @@ if _status is not None:
     else:
         st.toast("Optimal solution found.", icon="✅")
 
-st.title("Quad Tank — Open Loop Dynamic Optimization")
+st.markdown(
+    "<h2 style='margin: 0 0 0.25rem 0; padding: 0; font-size: 1.5rem; font-weight: 700;'>"
+    "Quad Tank — Open Loop Dynamic Optimization"
+    "</h2>",
+    unsafe_allow_html=True,
+)
+_caption_col, _ = st.columns([5, 4])
+with _caption_col:
+    st.markdown(
+        "Simulate open-loop optimal control of the quadruple-tank process: set "
+        "the four initial tank heights with the sidebar sliders and click "
+        "**Solve Optimization** to compute pump trajectories that drive the "
+        "system back to steady state. The **Simulation** tab animates the "
+        "result, **Plots** shows the time-series, and **Logs** shows IPOPT's output."
+    )
 
 # Three tabs for the three views of the optimization result.
 tab_sim, tab_plots, tab_logs = st.tabs(["▶  Simulation", "📈  Plots", "📋  Logs"])
