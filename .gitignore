@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 .ipynb_checkpoints/
 .claude/
+.idea/
 *.tmp.*
 .env
 .streamlit/secrets.toml
