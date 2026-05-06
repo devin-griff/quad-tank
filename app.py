@@ -58,11 +58,6 @@ def _get_ipopt_path():
     return shutil.which('ipopt')  # coinor-ipopt apt package puts it on PATH
 
 _get_ipopt_path()  # warm the cache at startup
-st.markdown(
-    '<h2 style="margin:0 0 0.15rem 0;padding:0;font-size:1.4rem;font-weight:700;">'
-    'Quad Tank — Open Loop Dynamic Optimization</h2>',
-    unsafe_allow_html=True,
-)
 
 # Steady-state tank heights (cm) — the reference point the controller drives
 # back to. The optimization works in deviation variables (z = x - x_ss) but
@@ -82,7 +77,7 @@ section[data-testid="stSidebar"] {
 }
 .block-container,
 [data-testid="stMainBlockContainer"] {
-    padding-top: 0.6rem !important;
+    padding-top: 1.5rem !important;
     padding-bottom: 0rem !important;
 }
 </style>
@@ -732,14 +727,13 @@ def build_tank_figure(res):
         data=make_traces(actual[0], 0),
         frames=frames,
         layout=go.Layout(
-            title=dict(text="Quad Tank - Open Loop Dynamic Optimization", font=dict(size=17)),
             xaxis=dict(visible=False, range=[-1.0, 11.0]),
             yaxis=dict(visible=False, range=[-0.1, 7.8],
                        scaleanchor="x", scaleratio=1),
             shapes=shapes,
             annotations=annotations,
-            height=730,
-            margin=dict(t=40, b=130, l=15, r=15),
+            height=560,
+            margin=dict(t=10, b=110, l=15, r=15),
             plot_bgcolor="#f8fafd",
             paper_bgcolor="#f8fafd",
             updatemenus=[{
@@ -873,6 +867,8 @@ if _status is not None:
         st.toast(f"Solver status: {_status} — results may be inaccurate.", icon="⚠️")
     else:
         st.toast("Optimal solution found.", icon="✅")
+
+st.title("Quad Tank — Open Loop Dynamic Optimization")
 
 # Three tabs for the three views of the optimization result.
 tab_sim, tab_plots, tab_logs = st.tabs(["▶  Simulation", "📈  Plots", "📋  Logs"])
