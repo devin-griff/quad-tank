@@ -1,3 +1,37 @@
+# =============================================================================
+# Quad-tank Open-loop Optimizer — a Streamlit tutorial app.
+#
+# This file builds an interactive web app for the quadruple-tank process — a
+# classic chemical-engineering benchmark with two pumps feeding four tanks
+# arranged in a 2x2 layout. Each pump's flow is split between a directly-fed
+# lower tank and a diagonally-paired upper tank that drains into the *other*
+# lower tank, producing the well-known cross-coupled dynamics.
+#
+# The solver runs an open-loop optimal control problem: starting from
+# user-specified tank levels, find pump trajectories that drive all four
+# tanks back to their steady states. This is a non-linear program (NLP)
+# discretized with orthogonal collocation on finite elements.
+#
+# Library roadmap:
+#   - streamlit  — UI framework. Each interaction reruns this script
+#                  top-to-bottom; persistent values live in `st.session_state`.
+#   - pyomo      — algebraic modeling: sets, params, vars, constraints,
+#                  objective. Continuous variables only (no integers).
+#   - IPOPT      — the NLP solver, a primal-dual interior-point method.
+#                  Called as a subprocess via Pyomo.
+#   - plotly     — both the animated schematic (Plotly frames + Play/Pause)
+#                  and the time-series subplots.
+#
+# File roadmap:
+#   1. Page config + IPOPT path helper.
+#   2. CSS / sidebar layout tweaks.
+#   3. Sidebar widgets — initial tank heights and the Solve button.
+#   4. solve_model       — builds and solves the Pyomo NLP.
+#   5. build_tank_figure — assembles the animated process schematic.
+#   6. build_timeseries  — small subplot grid of the optimized trajectories.
+#   7. Main layout       — auto-solve on first load, then three tabs.
+# =============================================================================
+
 import streamlit as st
 import streamlit.components.v1 as components
 import pyomo.environ as pyo
@@ -5,14 +39,20 @@ import io, contextlib
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# `set_page_config` must be the first Streamlit call. Wide layout + open
+# sidebar gives the schematic enough horizontal room.
 st.set_page_config(page_title="Quad Tank System", layout="wide",
                    initial_sidebar_state="expanded")
 
 @st.cache_resource
 def _get_ipopt_path():
     """Return the IPOPT executable path."""
+    # `st.cache_resource` keeps the lookup result alive for the whole
+    # process, so subsequent reruns don't re-scan PATH.
     import os, sys, shutil
     if sys.platform == 'win32':
+        # On the dev machine IPOPT comes from IDAES at a known path; fall
+        # back to PATH lookup if that location doesn't exist (e.g. CI, cloud).
         p = r'C:\Users\Devin\AppData\Local\idaes\bin\ipopt.exe'
         return p if os.path.exists(p) else shutil.which('ipopt')
     return shutil.which('ipopt')  # coinor-ipopt apt package puts it on PATH
@@ -24,10 +64,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Steady-state tank heights (cm) — the reference point the controller drives
+# back to. The optimization works in deviation variables (z = x - x_ss) but
+# the UI displays absolute heights, so XSS is used to convert between them.
 XSS = {1: 14.0, 2: 14.0, 3: 14.2, 4: 21.3}
 MAX_H = 30.0  # display ceiling for all tanks (cm)
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
+# CSS overrides. The sidebar text gets `user-select: none` so dragging
+# sliders doesn't accidentally select labels; the main block gets tighter
+# vertical padding so the schematic fits a normal screen without scrolling.
 st.markdown("""
 <style>
 section[data-testid="stSidebar"] {
@@ -42,6 +88,7 @@ section[data-testid="stSidebar"] {
 </style>
 """, unsafe_allow_html=True)
 
+# Sidebar inputs: four absolute-height sliders + two action buttons.
 st.sidebar.header("Initial Conditions")
 st.sidebar.caption("Absolute tank height (cm)")
 
@@ -51,31 +98,59 @@ x2init = st.sidebar.slider("x₂", 7.5, 28.0,  9.0, 0.1, format="%.1f", key="x2i
 x3init = st.sidebar.slider("x₃", 3.5, 28.0, 19.2, 0.1, format="%.1f", key="x3init")
 x4init = st.sidebar.slider("x₄", 4.5, 28.0, 16.3, 0.1, format="%.1f", key="x4init")
 
-# Convert absolute heights → deviations for the solver
+# Convert absolute heights → deviations for the solver. The Pyomo model
+# below uses deviation variables z_i = x_i - x_ss_i throughout.
 z1init = x1init - XSS[1]
 z2init = x2init - XSS[2]
 z3init = x3init - XSS[3]
 z4init = x4init - XSS[4]
 
 def _init_ss():
+    # `on_click` callback for the "Initialize at Steady State" button.
+    # Writing to the slider's session_state key resets its position.
     st.session_state["x1init"] = XSS[1]
     st.session_state["x2init"] = XSS[2]
     st.session_state["x3init"] = XSS[3]
     st.session_state["x4init"] = XSS[4]
 
 st.sidebar.button("Initialize at Steady State", on_click=_init_ss, use_container_width=True)
+# `solve_btn` is True for the rerun immediately after the button is clicked.
+# The actual handler is in the main layout section near the bottom of the file.
 solve_btn = st.sidebar.button("Solve Optimization", type="primary", use_container_width=True)
 
 # ── Solver ────────────────────────────────────────────────────────────────────
+#
+# `solve_model` builds and solves the Pyomo NLP. The continuous-time tank
+# ODEs are discretized with orthogonal collocation: the time horizon is
+# split into N finite elements of length h, and each element carries `ncp`
+# interior collocation points where the ODEs must be satisfied. State
+# values at element boundaries (z_i0[ii]) match the last collocation point
+# of the previous element, giving a continuous solution.
+
 def solve_model(zi):
     m = pyo.ConcreteModel()
+
+    # Discretization sizing: 15 finite elements of 10 s each, with 3
+    # collocation points per element (Radau quadrature).
     N, ncp = 15, 3
+
+    # Index sets:
+    #   i   = elements 0 .. N-1   (interior of horizon)
+    #   ii  = elements 1 .. N     (used for boundary continuity)
+    #   iii = boundaries 0 .. N   (one more point than elements)
+    #   c   = collocation points 1 .. ncp inside each element
+    #   t   = tank index 1 .. 4 (used by per-tank parameters)
     m.i   = pyo.Set(initialize=pyo.RangeSet(0, N-1))
     m.ii  = pyo.Set(initialize=pyo.RangeSet(1, N))
     m.iii = pyo.Set(initialize=pyo.RangeSet(0, N))
     m.c   = pyo.Set(initialize=pyo.RangeSet(1, ncp))
     m.t   = pyo.Set(initialize=pyo.RangeSet(1, 4))
 
+    # State variables. For each tank i in 1..4:
+    #   z_i0[ii] : the deviation level at element-boundary ii.
+    #   z_i[i,c] : the deviation level at collocation point c of element i.
+    #   z_i_dot[i,c] : the time derivative at the same collocation point.
+    # Bounds keep absolute heights in physically meaningful ranges.
     m.z10 = pyo.Var(pyo.RangeSet(0, N))
     m.z20 = pyo.Var(pyo.RangeSet(0, N))
     m.z30 = pyo.Var(pyo.RangeSet(0, N))
@@ -88,10 +163,24 @@ def solve_model(zi):
     m.z2dot = pyo.Var(m.i, m.c)
     m.z3dot = pyo.Var(m.i, m.c)
     m.z4dot = pyo.Var(m.i, m.c)
+
+    # Control inputs. v_p[i] is the deviation pump flow for pump p over
+    # element i (piecewise constant within an element). Bounds map back to
+    # absolute pump flows in [0, 60] given the steady-state offsets uss.
     m.v1  = pyo.Var(m.i, bounds=(-43.4, 16.6))
     m.v2  = pyo.Var(m.i, bounds=(-35.4, 24.6))
+
+    # Scalar that holds the tracking objective value (filled by track_con).
     m.track = pyo.Var(within=pyo.NonNegativeReals)
 
+    # Physical / numerical parameters:
+    #   smalla = nozzle (outflow) cross-section areas
+    #   biga   = tank cross-section areas
+    #   xss    = steady-state heights (also defined as XSS at module level)
+    #   uss    = steady-state pump flows
+    #   g      = gravity (cm/s^2)
+    #   gamma  = pump split fraction (0..1) directed to the lower tank
+    #   h      = element length in seconds
     m.smalla = pyo.Param(m.t, initialize={1: .233, 2: .242, 3: .127, 4: .127})
     m.biga   = pyo.Param(m.t, initialize={1: 50.27, 2: 50.27, 3: 28.27, 4: 28.27})
     m.xss    = pyo.Param(m.t, initialize={1: 14, 2: 14, 3: 14.2, 4: 21.3})
@@ -99,17 +188,29 @@ def solve_model(zi):
     m.g      = pyo.Param(initialize=981)
     m.gamma  = pyo.Param(initialize=.4)
     m.h      = pyo.Param(initialize=10)
+    # Radau collocation matrix: omega[k,c] is the integration weight from
+    # collocation point k applied when reconstructing the state at c. With
+    # ncp=3 these are the standard Radau-IIA coefficients.
     omega_data = {
         (1,1): 0.19681547722366, (1,2): 0.39442431473909, (1,3): 0.37640306270047,
         (2,1): -0.06553542585020, (2,2): 0.29207341166523, (2,3): 0.51248582618842,
         (3,1): 0.02377097434822,  (3,2): -0.04154875212600, (3,3): 0.11111111111111,
     }
     m.omega  = pyo.Param(m.c, m.c, initialize=omega_data)
+
+    # Initial-condition parameters wired in from the sidebar slider values.
     m.z1init = pyo.Param(initialize=zi[0])
     m.z2init = pyo.Param(initialize=zi[1])
     m.z3init = pyo.Param(initialize=zi[2])
     m.z4init = pyo.Param(initialize=zi[3])
 
+    # ── Tank dynamics ────────────────────────────────────────────────────────
+    # Each z_i_dot constraint is a Torricelli-style mass balance for tank i:
+    #   inflow from upstream tank's drain (sqrt term)
+    #   - own drain (sqrt term)
+    #   + share of pump flow directed at this tank.
+    # The cross-coupling is structural: pump 1 feeds tanks 1 and 4,
+    # pump 2 feeds tanks 2 and 3.
     def z1dot_def(m, i, c):
         return m.z1dot[i,c] == (
             -(m.smalla[1]/m.biga[1])*pyo.sqrt(2*m.g*(m.z1[i,c]+m.xss[1]))
@@ -136,6 +237,10 @@ def solve_model(zi):
             +((1-m.gamma)/m.biga[4])*(m.v1[i]+m.uss[1]))
     m.z4dot_con = pyo.Constraint(m.i, m.c, rule=z4dot_def)
 
+    # ── Collocation (state at collocation points) ────────────────────────────
+    # Each z_i[i,c] equals the start-of-element value plus the integral of
+    # z_i_dot from element start up to point c, approximated with the omega
+    # weights. This is the "Lagrange" (or implicit Runge-Kutta) form.
     def z1_def(m, i, c):
         return m.z1[i,c] == m.z10[i] + m.h*sum(m.omega[k,c]*m.z1dot[i,k] for k in m.c)
     m.z1_con = pyo.Constraint(m.i, m.c, rule=z1_def)
@@ -152,20 +257,35 @@ def solve_model(zi):
         return m.z4[i,c] == m.z40[i] + m.h*sum(m.omega[k,c]*m.z4dot[i,k] for k in m.c)
     m.z4_con = pyo.Constraint(m.i, m.c, rule=z4_def)
 
+    # ── Boundary continuity ──────────────────────────────────────────────────
+    # The start of element ii equals the last collocation point of element
+    # ii-1. This stitches consecutive elements into a single trajectory.
     m.z10_con = pyo.Constraint(m.ii, rule=lambda m, ii: m.z10[ii] == m.z1[ii-1, ncp])
     m.z20_con = pyo.Constraint(m.ii, rule=lambda m, ii: m.z20[ii] == m.z2[ii-1, ncp])
     m.z30_con = pyo.Constraint(m.ii, rule=lambda m, ii: m.z30[ii] == m.z3[ii-1, ncp])
     m.z40_con = pyo.Constraint(m.ii, rule=lambda m, ii: m.z40[ii] == m.z4[ii-1, ncp])
 
+    # ── Initial conditions ───────────────────────────────────────────────────
+    # Pin the t=0 boundary values to the parameters wired in from the sidebar.
     m.z1init_con = pyo.Constraint(expr=m.z10[0] == m.z1init)
     m.z2init_con = pyo.Constraint(expr=m.z20[0] == m.z2init)
     m.z3init_con = pyo.Constraint(expr=m.z30[0] == m.z3init)
     m.z4init_con = pyo.Constraint(expr=m.z40[0] == m.z4init)
 
+    # ── Objective ────────────────────────────────────────────────────────────
+    # Minimize sum of squared deviations across all element boundaries —
+    # i.e. drive every tank back to its steady state. Done as a defining
+    # constraint plus a min-track objective so IPOPT sees a clean linear
+    # objective with a nonlinear constraint, which often converges better
+    # than an inline quadratic objective for problems of this shape.
     m.track_con = pyo.Constraint(
         expr=m.track == sum(m.z10[i]**2 + m.z20[i]**2 + m.z30[i]**2 + m.z40[i]**2 for i in m.iii))
     m.obj = pyo.Objective(expr=m.track, sense=pyo.minimize)
 
+    # ── Solve ────────────────────────────────────────────────────────────────
+    # Pass the resolved IPOPT path explicitly when available so users don't
+    # need ipopt on PATH. `tee=True` streams solver output to stdout, which
+    # we redirect into a StringIO so it can be displayed in the Logs tab.
     _ipopt = _get_ipopt_path()
     solver = (pyo.SolverFactory('ipopt', executable=_ipopt)
               if _ipopt else pyo.SolverFactory('ipopt'))
@@ -174,6 +294,8 @@ def solve_model(zi):
         result = solver.solve(m, tee=True)
     status = str(result.solver.termination_condition)
 
+    # Extract everything the UI needs into plain Python lists. Times are in
+    # seconds (each element is h=10 s long, so element index k → t = 10k).
     t_pts = list(m.iii)
     return {
         "status": status,
@@ -189,6 +311,17 @@ def solve_model(zi):
 
 
 # ── Animated schematic ────────────────────────────────────────────────────────
+#
+# `build_tank_figure` returns a plotly Figure with animation frames — one
+# per element boundary in the optimization horizon. The figure has three
+# layers built up over the function:
+#   1. Static `shapes` — tanks, walls, pipes, valves, pumps, gauges.
+#   2. Animated `traces` — water fill in each tank, flow streams, pump
+#      gauge fills, water-level labels. Rebuilt once per frame.
+#   3. Layout — Play/Pause buttons + frame slider.
+# The function is long because every shape is positioned by hand; once the
+# coordinate system is set up, each chunk is independent and additive.
+
 def build_tank_figure(res):
     """Animated schematic matching the quad-tank physical layout."""
     import math as _m
@@ -249,6 +382,7 @@ def build_tank_figure(res):
     t_pts = res["t"]
     n_pts = len(t_pts)
 
+    # Convert deviation results back to absolute heights for display.
     actual = [
         {1: res["z10"][k] + XSS[1],
          2: res["z20"][k] + XSS[2],
@@ -307,6 +441,10 @@ def build_tank_figure(res):
     ]
 
     # ── helper ───────────────────────────────────────────────────────────────
+    # `water_top_y` maps a tank height in cm to the vertical pixel position
+    # of the water surface inside the schematic. `stream_rect` builds a
+    # rectangular flow stream as a filled scatter polygon. `make_traces`
+    # produces all dynamic shapes for a single animation frame.
     def water_top_y(tk, h):
         x0, y0, x1, y1 = TB[tk]
         return y0 + min(1.0, max(0.01, h / DISP_MAX)) * (y1 - y0)
@@ -385,10 +523,15 @@ def build_tank_figure(res):
         ))
         return traces
 
+    # One animation frame per time step. Plotly cycles through these when
+    # the user clicks Play; the slider also exposes them individually.
     frames = [go.Frame(name=str(k), data=make_traces(actual[k], k))
               for k in range(n_pts)]
 
     # ── static shapes ─────────────────────────────────────────────────────────
+    # `shapes` is a single flat list of plotly shape dicts — built up
+    # additively below. Order matters only for things that overlap (e.g.
+    # the masking rectangle behind the gamma-valve symbols).
     PC = "#6b6b6b"   # unified gray for all structural elements (pipes + tank walls)
 
     def pipe(x0, y0, x1, y1, color=PC):
@@ -572,6 +715,8 @@ def build_tank_figure(res):
              font=dict(size=13, color="#8b0000"), xanchor="left"),
     ]
 
+    # Slider step list: one step per frame, scrubbing immediately to that
+    # frame without playback. The label is the absolute time in seconds.
     slider_steps = [
         {"args": [[str(k)], {"frame": {"duration": 0}, "mode": "immediate",
                               "transition": {"duration": 0}}],
@@ -579,6 +724,10 @@ def build_tank_figure(res):
         for k, t in enumerate(t_pts)
     ]
 
+    # Assemble the figure. Initial `data` is the first frame's traces; the
+    # `frames` argument is consumed by the Play button and slider. Layout
+    # disables both axes (purely positional drawing) and locks aspect ratio
+    # so the schematic doesn't squish.
     return go.Figure(
         data=make_traces(actual[0], 0),
         frames=frames,
@@ -620,10 +769,19 @@ def build_tank_figure(res):
 
 
 # ── Time-series plots ─────────────────────────────────────────────────────────
+#
+# Compact alternative view: two stacked subplots (tank-level deviations on
+# top, pump-input deviations on bottom). Useful for reading the full
+# trajectory at a glance instead of frame-by-frame.
+
 def build_timeseries(res):
+    # Two time grids: `t` is element boundaries (where states are defined),
+    # `ti` is element starts (where pump inputs are defined — they are
+    # piecewise-constant within an element).
     t  = res["t"]
     ti = [k * 10 for k in range(len(res["v1"]))]
 
+    # Two-row subplot grid; legends are split by row using `legend2`.
     fig = make_subplots(
         rows=2, cols=1,
         subplot_titles=("Tank Levels (deviation from steady-state)", "Pump Inputs"),
@@ -668,6 +826,19 @@ def build_timeseries(res):
 
 
 # ── Main layout ───────────────────────────────────────────────────────────────
+#
+# Module-level code runs on every Streamlit rerun. The flow:
+#   1. First-load auto-solve. If `res` isn't in session_state yet, run the
+#      solver with the current sidebar values, stash the result, and rerun
+#      so the rest of the script renders against it.
+#   2. Manual solve. If the user clicks "Solve Optimization", same dance.
+#   3. Toast. After a successful solve we set `solve_status`; on the next
+#      rerun (after the `st.rerun()` above) we pop it and show a toast.
+#   4. Tabs. Simulation (animated schematic), Plots (time series), Logs.
+
+# First-load auto-solve: avoids showing an empty page before the user
+# touches any control. Wrapped in try/except so a missing/broken IPOPT
+# surfaces a clear error instead of a traceback.
 if "res" not in st.session_state:
     with st.spinner("Running IPOPT optimization..."):
         try:
@@ -680,6 +851,7 @@ if "res" not in st.session_state:
     st.session_state["autoplay"] = True
     st.rerun()
 
+# Manual solve in response to the sidebar button.
 if solve_btn:
     with st.spinner("Running IPOPT optimization..."):
         try:
@@ -693,7 +865,8 @@ if solve_btn:
     st.session_state["autoplay"] = True
     st.rerun()  # clean re-render — lands on Simulation tab, no spinner blocking charts
 
-# Floating toast notification shown once after solve (takes no layout space)
+# Floating toast notification shown once after solve (takes no layout space).
+# `pop` ensures it fires only on the rerun immediately after the solve.
 _status = st.session_state.pop("solve_status", None)
 if _status is not None:
     if _status != "optimal":
@@ -701,6 +874,7 @@ if _status is not None:
     else:
         st.toast("Optimal solution found.", icon="✅")
 
+# Three tabs for the three views of the optimization result.
 tab_sim, tab_plots, tab_logs = st.tabs(["▶  Simulation", "📈  Plots", "📋  Logs"])
 
 if "res" in st.session_state:
@@ -708,7 +882,12 @@ if "res" in st.session_state:
 
     with tab_sim:
         st.plotly_chart(build_tank_figure(res), use_container_width=True)
-        # Autoplay only fires on the Simulation tab; rerun always lands here first
+        # Autoplay: after a solve, simulate a click on Plotly's Play
+        # button so the animation starts without the user having to press
+        # it. The injected JS reaches into the parent document because
+        # `components.html` is sandboxed in an iframe; `setTimeout` waits
+        # for the chart to finish rendering. Only fires once because of
+        # `pop`.
         if st.session_state.pop("autoplay", False):
             components.html("""
             <script>
@@ -730,6 +909,7 @@ if "res" in st.session_state:
         st.plotly_chart(build_timeseries(res), use_container_width=True)
 
     with tab_logs:
+        # IPOPT's stdout was captured into the `log` field by `solve_model`.
         log = res.get("log", "")
         if log.strip():
             st.code(log, language=None)
@@ -737,5 +917,7 @@ if "res" in st.session_state:
             st.info("No log output was captured. The solver may be writing directly to the system stdout.")
 
 else:
+    # Defensive fallback — should not be reachable under normal flow because
+    # the auto-solve above always populates `res`.
     with tab_sim:
         st.info("Set initial conditions in the sidebar and click **Solve Optimization** to begin.")
