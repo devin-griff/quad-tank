@@ -36,6 +36,9 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pyomo.environ as pyo
+# Registers `ripopt` with pyo.SolverFactory via decorator side-effect; the
+# wheel also bundles the solver binary so no system install is required.
+import pyomo_ripopt  # noqa: F401
 import io, contextlib
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -859,7 +862,12 @@ if _status is not None:
 
 st.markdown(
     "<h2 style='margin: 0 0 0.25rem 0; padding: 0; font-size: 1.5rem; font-weight: 700;'>"
-    "Quad Tank — Open Loop Dynamic Optimization"
+    "Quad Tank — Open Loop Dynamic Optimization "
+    "<span style='font-size: 0.85rem; font-weight: 400; color: #6b7280;'>"
+    "powered by "
+    "<a href='https://github.com/jkitchin/ripopt' target='_blank' "
+    "style='color: #6b7280; text-decoration: underline;'>rIPOPT</a>"
+    "</span>"
     "</h2>",
     unsafe_allow_html=True,
 )
