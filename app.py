@@ -851,19 +851,17 @@ if solve_btn:
     st.session_state["autoplay"] = True
     st.rerun()  # clean re-render — lands on Simulation tab, no spinner blocking charts
 
-# Floating toast notification shown once after solve (takes no layout space).
-# `pop` ensures it fires only on the rerun immediately after the solve.
+# Surface a toast only when the solver returns a non-optimal status — the
+# happy path stays silent so solves don't spam the user. `pop` ensures the
+# warning fires once per solve (on the rerun immediately after).
 _status = st.session_state.pop("solve_status", None)
-if _status is not None:
-    if _status != "optimal":
-        st.toast(f"Solver status: {_status} — results may be inaccurate.", icon="⚠️")
-    else:
-        st.toast("Optimal solution found.", icon="✅")
+if _status is not None and _status != "optimal":
+    st.toast(f"Solver status: {_status} — results may be inaccurate.", icon="⚠️")
 
 st.markdown(
     "<h2 style='margin: 0 0 0.25rem 0; padding: 0; font-size: 1.5rem; font-weight: 700;'>"
     "Quad Tank — Open Loop Dynamic Optimization "
-    "<span style='font-size: 0.85rem; font-weight: 400; color: #6b7280;'>"
+    "<span style='font-size: 1.15rem; font-weight: 400; color: #6b7280;'>"
     "powered by "
     "<a href='https://github.com/jkitchin/ripopt' target='_blank' "
     "style='color: #6b7280; text-decoration: underline;'>rIPOPT</a>"
@@ -889,28 +887,6 @@ if "res" in st.session_state:
 
     with tab_sim:
         st.plotly_chart(build_tank_figure(res), use_container_width=True)
-        # Autoplay: after a solve, simulate a click on Plotly's Play
-        # button so the animation starts without the user having to press
-        # it. The injected JS reaches into the parent document because
-        # `components.html` is sandboxed in an iframe; `setTimeout` waits
-        # for the chart to finish rendering. Only fires once because of
-        # `pop`.
-        if st.session_state.pop("autoplay", False):
-            components.html("""
-            <script>
-            setTimeout(function() {
-                const doc = window.parent.document;
-                // Plotly buttons are SVG <g> elements; find the one whose <text> says Play
-                const texts = doc.querySelectorAll('text');
-                for (const t of texts) {
-                    if (t.textContent.trim() === '▶  Play') {
-                        t.parentElement.dispatchEvent(new MouseEvent('click', {bubbles: true}));
-                        break;
-                    }
-                }
-            }, 1500);
-            </script>
-            """, height=0)
 
     with tab_plots:
         st.plotly_chart(build_timeseries(res), use_container_width=True)
@@ -928,3 +904,29 @@ else:
     # the auto-solve above always populates `res`.
     with tab_sim:
         st.info("Set initial conditions in the sidebar and click **Solve Optimization** to begin.")
+
+# Autoplay: after a solve, simulate a click on Plotly's Play button so the
+# animation starts without the user pressing it. Rendered unconditionally
+# so Streamlit's component diff treats this as one stable element rather
+# than a fresh iframe per solve. The trigger flag is passed inline to the
+# embedded JS, which only acts on it when "true". Known cosmetic issue:
+# the iframe wrapper claims a few pixels of layout space, which can shift
+# the chart slightly on each solve — tracked separately, autoplay stays.
+_should_autoplay = st.session_state.pop("autoplay", False)
+components.html(f"""
+<script>
+(function() {{
+    if (!{str(_should_autoplay).lower()}) return;
+    setTimeout(function() {{
+        const doc = window.parent.document;
+        const texts = doc.querySelectorAll('text');
+        for (const t of texts) {{
+            if (t.textContent.trim() === '▶  Play') {{
+                t.parentElement.dispatchEvent(new MouseEvent('click', {{bubbles: true}}));
+                break;
+            }}
+        }}
+    }}, 1500);
+}})();
+</script>
+""", height=0)
