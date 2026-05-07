@@ -826,7 +826,7 @@ def build_timeseries(res):
 # touches any control. Wrapped in try/except so a missing/broken solver
 # surfaces a clear error instead of a traceback.
 if "res" not in st.session_state:
-    with st.spinner("Running ripopt optimization..."):
+    with st.spinner("Running rIPOPT optimization..."):
         try:
             res = solve_model([z1init, z2init, z3init, z4init])
         except Exception as e:
@@ -839,7 +839,7 @@ if "res" not in st.session_state:
 
 # Manual solve in response to the sidebar button.
 if solve_btn:
-    with st.spinner("Running ripopt optimization..."):
+    with st.spinner("Running rIPOPT optimization..."):
         try:
             res = solve_model([z1init, z2init, z3init, z4init])
         except Exception as e:
@@ -876,7 +876,7 @@ with _caption_col:
         "the four initial tank heights with the sidebar sliders and click "
         "**Solve Optimization** to compute pump trajectories that drive the "
         "system back to steady state. The **Simulation** tab animates the "
-        "result, **Plots** shows the time-series, and **Logs** shows ripopt's output."
+        "result, **Plots** shows the time-series, and **Logs** shows rIPOPT's output."
     )
 
 # Three tabs for the three views of the optimization result.
