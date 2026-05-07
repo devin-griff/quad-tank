@@ -17,13 +17,14 @@
 #                  top-to-bottom; persistent values live in `st.session_state`.
 #   - pyomo      — algebraic modeling: sets, params, vars, constraints,
 #                  objective. Continuous variables only (no integers).
-#   - IPOPT      — the NLP solver, a primal-dual interior-point method.
-#                  Called as a subprocess via Pyomo.
+#   - ripopt     — the NLP solver, a Rust reimplementation of IPOPT
+#                  (primal-dual interior-point). Called as a subprocess
+#                  via Pyomo. Binary ships in the `pyomo-ripopt` wheel.
 #   - plotly     — both the animated schematic (Plotly frames + Play/Pause)
 #                  and the time-series subplots.
 #
 # File roadmap:
-#   1. Page config + IPOPT path helper.
+#   1. Page config.
 #   2. CSS / sidebar layout tweaks.
 #   3. Sidebar widgets — initial tank heights and the Solve button.
 #   4. solve_model       — builds and solves the Pyomo NLP.
@@ -44,20 +45,9 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="Quad Tank System", layout="wide",
                    initial_sidebar_state="expanded")
 
-@st.cache_resource
-def _get_ipopt_path():
-    """Return the IPOPT executable path."""
-    # `st.cache_resource` keeps the lookup result alive for the whole
-    # process, so subsequent reruns don't re-scan PATH.
-    import os, sys, shutil
-    if sys.platform == 'win32':
-        # On the dev machine IPOPT comes from IDAES at a known path; fall
-        # back to PATH lookup if that location doesn't exist (e.g. CI, cloud).
-        p = r'C:\Users\Devin\AppData\Local\idaes\bin\ipopt.exe'
-        return p if os.path.exists(p) else shutil.which('ipopt')
-    return shutil.which('ipopt')  # coinor-ipopt apt package puts it on PATH
-
-_get_ipopt_path()  # warm the cache at startup
+# Solver: ripopt (Rust reimplementation of IPOPT), shipped via the
+# `pyomo-ripopt` wheel, which bundles the solver binary — no system install
+# required. Pyomo finds it through SolverFactory("ripopt") below.
 
 # Steady-state tank heights (cm) — the reference point the controller drives
 # back to. The optimization works in deviation variables (z = x - x_ss) but
@@ -270,20 +260,19 @@ def solve_model(zi):
     # ── Objective ────────────────────────────────────────────────────────────
     # Minimize sum of squared deviations across all element boundaries —
     # i.e. drive every tank back to its steady state. Done as a defining
-    # constraint plus a min-track objective so IPOPT sees a clean linear
-    # objective with a nonlinear constraint, which often converges better
-    # than an inline quadratic objective for problems of this shape.
+    # constraint plus a min-track objective so the solver sees a clean
+    # linear objective with a nonlinear constraint, which often converges
+    # better than an inline quadratic objective for problems of this shape.
     m.track_con = pyo.Constraint(
         expr=m.track == sum(m.z10[i]**2 + m.z20[i]**2 + m.z30[i]**2 + m.z40[i]**2 for i in m.iii))
     m.obj = pyo.Objective(expr=m.track, sense=pyo.minimize)
 
     # ── Solve ────────────────────────────────────────────────────────────────
-    # Pass the resolved IPOPT path explicitly when available so users don't
-    # need ipopt on PATH. `tee=True` streams solver output to stdout, which
-    # we redirect into a StringIO so it can be displayed in the Logs tab.
-    _ipopt = _get_ipopt_path()
-    solver = (pyo.SolverFactory('ipopt', executable=_ipopt)
-              if _ipopt else pyo.SolverFactory('ipopt'))
+    # ripopt's binary is bundled in the pyomo-ripopt wheel, so SolverFactory
+    # finds it without any path lookup. `tee=True` streams solver output to
+    # stdout, which we redirect into a StringIO so it can be displayed in
+    # the Logs tab.
+    solver = pyo.SolverFactory('ripopt')
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         result = solver.solve(m, tee=True)
@@ -831,10 +820,10 @@ def build_timeseries(res):
 #   4. Tabs. Simulation (animated schematic), Plots (time series), Logs.
 
 # First-load auto-solve: avoids showing an empty page before the user
-# touches any control. Wrapped in try/except so a missing/broken IPOPT
+# touches any control. Wrapped in try/except so a missing/broken solver
 # surfaces a clear error instead of a traceback.
 if "res" not in st.session_state:
-    with st.spinner("Running IPOPT optimization..."):
+    with st.spinner("Running ripopt optimization..."):
         try:
             res = solve_model([z1init, z2init, z3init, z4init])
         except Exception as e:
@@ -847,7 +836,7 @@ if "res" not in st.session_state:
 
 # Manual solve in response to the sidebar button.
 if solve_btn:
-    with st.spinner("Running IPOPT optimization..."):
+    with st.spinner("Running ripopt optimization..."):
         try:
             res = solve_model([z1init, z2init, z3init, z4init])
         except Exception as e:
@@ -881,7 +870,7 @@ with _caption_col:
         "the four initial tank heights with the sidebar sliders and click "
         "**Solve Optimization** to compute pump trajectories that drive the "
         "system back to steady state. The **Simulation** tab animates the "
-        "result, **Plots** shows the time-series, and **Logs** shows IPOPT's output."
+        "result, **Plots** shows the time-series, and **Logs** shows ripopt's output."
     )
 
 # Three tabs for the three views of the optimization result.
@@ -919,7 +908,7 @@ if "res" in st.session_state:
         st.plotly_chart(build_timeseries(res), use_container_width=True)
 
     with tab_logs:
-        # IPOPT's stdout was captured into the `log` field by `solve_model`.
+        # ripopt's stdout was captured into the `log` field by `solve_model`.
         log = res.get("log", "")
         if log.strip():
             st.code(log, language=None)
