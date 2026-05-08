@@ -68,6 +68,21 @@ section[data-testid="stSidebar"] {
     user-select: none;
     -webkit-user-select: none;
 }
+/* Pin the home-link logo to the viewport's top-left corner at the same
+   offset used on the sidebarless Knapsack and Diet apps. position: fixed
+   means it sits at the same screen location regardless of sidebar layout. */
+.home-logo-corner {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.75rem;
+    z-index: 999999;
+}
+.home-logo-corner img {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    display: block;
+}
 .block-container,
 [data-testid="stMainBlockContainer"] {
     padding-top: 4rem !important;
@@ -77,6 +92,20 @@ section[data-testid="stSidebar"] {
 """, unsafe_allow_html=True)
 
 # Sidebar inputs: four absolute-height sliders + two action buttons.
+# Home link: clicking the Griffith PSE logo navigates back to the portfolio
+# site. Same-tab navigation since the user is leaving the demo. Lives at
+# the top of the sidebar (the upper-left of the page when expanded), so
+# it's visually consistent with the corner-pinned logo on the sidebarless
+# Knapsack and Diet apps. Image is loaded from griffith-pse.com so a
+# single CDN-served copy is the source of truth across all apps.
+st.sidebar.markdown(
+    '<a class="home-logo-corner" href="https://griffith-pse.com" target="_self">'
+    '<img src="https://griffith-pse.com/images/favicon.png" '
+        'alt="Griffith PSE — home" />'
+    '</a>',
+    unsafe_allow_html=True,
+)
+
 st.sidebar.header("Initial Conditions")
 st.sidebar.caption("Absolute tank height (cm)")
 
