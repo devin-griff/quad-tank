@@ -1,9 +1,20 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-.ipynb_checkpoints/
-.claude/
-.idea/
-*.tmp.*
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+
+# Environment / secrets
 .env
 .streamlit/secrets.toml
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build / logs
+*.log
