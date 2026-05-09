@@ -33,6 +33,9 @@
 #   7. Main layout       — auto-solve on first load, then three tabs.
 # =============================================================================
 
+import base64
+from pathlib import Path
+
 import streamlit as st
 import streamlit.components.v1 as components
 import pyomo.environ as pyo
@@ -96,13 +99,17 @@ section[data-testid="stSidebar"] {
 # site. Same-tab navigation since the user is leaving the demo. Lives at
 # the top of the sidebar (the upper-left of the page when expanded), so
 # it's visually consistent with the corner-pinned logo on the sidebarless
-# Knapsack and Diet apps. Image is loaded from griffith-pse.com so a
-# single CDN-served copy is the source of truth across all apps.
+# Knapsack and Diet apps. Image is embedded from the local favicon.png as
+# a base64 data URL — the link still navigates to griffith-pse.com when
+# clicked, but loading the page itself doesn't make any third-party request.
+_FAVICON_DATA_URL = "data:image/png;base64," + base64.b64encode(
+    (Path(__file__).parent / "favicon.png").read_bytes()
+).decode()
 st.sidebar.markdown(
-    '<a class="home-logo-corner" href="https://griffith-pse.com" target="_self">'
-    '<img src="https://griffith-pse.com/images/favicon.png" '
-        'alt="Griffith PSE — home" />'
-    '</a>',
+    f'<a class="home-logo-corner" href="https://griffith-pse.com" target="_self">'
+    f'<img src="{_FAVICON_DATA_URL}" '
+        f'alt="Griffith PSE — home" />'
+    f'</a>',
     unsafe_allow_html=True,
 )
 
