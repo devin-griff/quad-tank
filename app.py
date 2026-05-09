@@ -10,7 +10,9 @@
 # The solver runs an open-loop optimal control problem: starting from
 # user-specified tank levels, find pump trajectories that drive all four
 # tanks back to their steady states. This is a non-linear program (NLP)
-# discretized with orthogonal collocation on finite elements.
+# discretized with orthogonal collocation on finite elements. The model
+# follows Raff et al. (2006) and the discretization follows Biegler (2010);
+# both are cited from the in-app `📐 Formulation` tab.
 #
 # Library roadmap:
 #   - streamlit  — UI framework. Each interaction reruns this script
@@ -26,11 +28,12 @@
 # File roadmap:
 #   1. Page config.
 #   2. CSS / sidebar layout tweaks.
-#   3. Sidebar widgets — initial tank heights and the Solve button.
-#   4. solve_model       — builds and solves the Pyomo NLP.
-#   5. build_tank_figure — assembles the animated process schematic.
-#   6. build_timeseries  — small subplot grid of the optimized trajectories.
-#   7. Main layout       — auto-solve on first load, then three tabs.
+#   3. Sidebar widgets — initial tank heights, controller params, Solve button.
+#   4. solve_model            — builds and solves the Pyomo NLP.
+#   5. build_tank_figure      — assembles the animated process schematic.
+#   6. build_timeseries       — small subplot grid of the optimized trajectories.
+#   7. render_formulation_tab — static markdown for the Formulation tab.
+#   8. Main layout            — auto-solve on first load, then four tabs.
 # =============================================================================
 
 import base64
@@ -77,14 +80,13 @@ section[data-testid="stSidebar"] > div:last-child,
 [data-testid="stSidebarUserContent"] {
     padding-bottom: 0.5rem !important;
 }
-/* Pin the home-link logo to the viewport's top-left corner at the same
-   offset used on the sidebarless Knapsack and Diet apps. position: fixed
-   means it sits at the same screen location regardless of sidebar layout. */
+/* Home-link logo at the very top of the sidebar, in normal document flow
+   so it scrolls with the sidebar content (not pinned to the viewport).
+   The sidebarless Knapsack and Diet apps still use a position:fixed
+   variant of this same class — those have no sidebar to anchor to. */
 .home-logo-corner {
-    position: fixed;
-    top: 0.5rem;
-    left: 0.75rem;
-    z-index: 999999;
+    display: block;
+    margin: 0 0 0.75rem;
 }
 .home-logo-corner img {
     width: 32px;
@@ -92,9 +94,24 @@ section[data-testid="stSidebar"] > div:last-child,
     border-radius: 4px;
     display: block;
 }
-.block-container,
+/* Hide Streamlit's sticky sidebar header (which hosts the «« collapse
+   arrow) so the home-logo sits at the very top of the sidebar with no
+   chrome above it. Trade-off: the user can no longer collapse the sidebar
+   via the button. The sidebar is the app's control panel and is meant
+   to stay visible, so this is fine for this app. */
+[data-testid="stSidebarHeader"] {
+    display: none !important;
+}
+[data-testid="stSidebarUserContent"] {
+    padding-top: 0.5rem !important;
+}
+/* Slightly tighten the gap between each sidebar slider and the widget
+   below it. Most sliders are followed by another slider's label, so this
+   pulls those labels closer to the preceding track. */
+section[data-testid="stSidebar"] [data-testid="stSlider"] {
+    margin-bottom: -0.25rem !important;
+}
 [data-testid="stMainBlockContainer"] {
-    padding-top: 4rem !important;
     padding-bottom: 0rem !important;
 }
 </style>
@@ -119,8 +136,14 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
-st.sidebar.header("Initial Conditions")
-st.sidebar.caption("Absolute tank height (cm)")
+# Inline the unit hint into the section header (rather than a separate
+# `st.caption(...)` line below it) so the sidebar stays compact. The span
+# styling matches Streamlit's default caption: gray, smaller, regular weight.
+st.sidebar.markdown(
+    '## Initial Conditions &nbsp; <span style="color: rgba(49, 51, 63, 0.6); '
+    'font-size: 0.875rem; font-weight: 400;">tank height (cm)</span>',
+    unsafe_allow_html=True,
+)
 
 # Slider ranges derived from model variable bounds converted to absolute height
 x1init = st.sidebar.slider("x₁", 7.5, 28.0, 19.0, 0.1, format="%.1f", key="x1init")
@@ -145,12 +168,15 @@ def _init_ss():
 
 st.sidebar.button("Initialize at Steady State", on_click=_init_ss, use_container_width=True)
 
-# Discretization knobs. The continuous-time ODEs are solved by orthogonal
-# collocation on N finite elements of length h. The user can vary both;
-# changes take effect on the next "Solve Optimization" click.
-st.sidebar.header("Discretization")
-h_step = st.sidebar.slider("Step size, h (s)", 1, 30, 10, 1, key="h_step")
-nfe    = st.sidebar.slider("Finite elements, nfe", 5, 30, 15, 1, key="nfe")
+# Controller parameters: objective weighting + discretization grid.
+#   ρ      — control-effort weight in the tracking objective. 0 = pure
+#            regulator, larger values smooth the pump trajectories.
+#   h, nfe — orthogonal collocation grid: nfe finite elements of length h
+#            seconds each. Changes take effect on the next Solve click.
+st.sidebar.header("Controller Parameters")
+rho    = st.sidebar.slider("Control penalty, ρ",    0.0, 1.0, 0.0, 0.01, key="rho")
+h_step = st.sidebar.slider("Step size, h (s)",      1,    30,  10,  1,   key="h_step")
+nfe    = st.sidebar.slider("Finite elements, nfe",  5,    30,  15,  1,   key="nfe")
 st.sidebar.caption(f"Total horizon: {h_step * nfe} s")
 
 # `solve_btn` is True for the rerun immediately after the button is clicked.
@@ -166,7 +192,7 @@ solve_btn = st.sidebar.button("Solve Optimization", type="primary", use_containe
 # values at element boundaries (z_i0[ii]) match the last collocation point
 # of the previous element, giving a continuous solution.
 
-def solve_model(zi, nfe, h):
+def solve_model(zi, nfe, h, rho):
     m = pyo.ConcreteModel()
 
     # Discretization sizing: `nfe` finite elements of `h` s each, with 3
@@ -229,6 +255,7 @@ def solve_model(zi, nfe, h):
     m.g      = pyo.Param(initialize=981)
     m.gamma  = pyo.Param(initialize=.4)
     m.h      = pyo.Param(initialize=h)
+    m.rho    = pyo.Param(initialize=rho)
     # Radau collocation matrix: omega[k,c] is the integration weight from
     # collocation point k applied when reconstructing the state at c. With
     # ncp=3 these are the standard Radau-IIA coefficients.
@@ -314,13 +341,17 @@ def solve_model(zi, nfe, h):
     m.z4init_con = pyo.Constraint(expr=m.z40[0] == m.z4init)
 
     # ── Objective ────────────────────────────────────────────────────────────
-    # Minimize sum of squared deviations across all element boundaries —
-    # i.e. drive every tank back to its steady state. Done as a defining
-    # constraint plus a min-track objective so the solver sees a clean
-    # linear objective with a nonlinear constraint, which often converges
-    # better than an inline quadratic objective for problems of this shape.
+    # Minimize sum of squared state deviations (drive every tank back to
+    # steady state) plus ρ·sum of squared pump-input deviations (penalize
+    # control effort). State term is summed over element boundaries; control
+    # term is summed over elements (pump inputs are piecewise constant
+    # within an element). Wrapped in a defining constraint plus a linear
+    # min-track objective so the solver sees a clean linear objective with
+    # a nonlinear constraint, which often converges better than an inline
+    # quadratic objective for problems of this shape.
     m.track_con = pyo.Constraint(
-        expr=m.track == sum(m.z10[i]**2 + m.z20[i]**2 + m.z30[i]**2 + m.z40[i]**2 for i in m.iii))
+        expr=m.track == sum(m.z10[i]**2 + m.z20[i]**2 + m.z30[i]**2 + m.z40[i]**2 for i in m.iii)
+                      + m.rho * sum(m.v1[i]**2 + m.v2[i]**2 for i in m.i))
     m.obj = pyo.Objective(expr=m.track, sense=pyo.minimize)
 
     # ── Solve ────────────────────────────────────────────────────────────────
@@ -864,6 +895,146 @@ def build_timeseries(res):
     return fig
 
 
+# ── Formulation tab ───────────────────────────────────────────────────────────
+#
+# Static content describing the model and the optimization problem. Equations
+# render via Streamlit's built-in KaTeX (`$$...$$` in markdown). The parameter
+# table uses HTML for tighter spacing — Streamlit's KaTeX does NOT process
+# `$...$` inside `unsafe_allow_html=True` blocks, so symbol cells use Unicode
+# subscripts (Aᵢ, aᵢ, …) rather than LaTeX.
+#
+# References at the bottom point to the original four-tank-system paper for
+# the model and to Biegler's textbook for the simultaneous direct-transcription
+# approach used to discretize the continuous-time OCP.
+
+def render_formulation_tab():
+    st.markdown(r"""
+### Process model
+
+The four-tank system [Raff et al., 2006] models water levels in four
+interconnected tanks driven by two pumps with a flow-split valve at each
+pump outlet. Pump $k$ sends a fraction $\gamma_k$ of its flow to its
+paired lower tank and the remaining $1-\gamma_k$ overhead to the
+diagonally-opposite upper tank, which then drains into the *other* lower
+tank. Mass balance gives four nonlinear ODEs:
+
+$$\dot{x}_1 = -\tfrac{a_1}{A_1}\sqrt{2 g x_1} + \tfrac{a_3}{A_1}\sqrt{2 g x_3} + \tfrac{\gamma_1}{A_1}u_1$$
+
+$$\dot{x}_2 = -\tfrac{a_2}{A_2}\sqrt{2 g x_2} + \tfrac{a_4}{A_2}\sqrt{2 g x_4} + \tfrac{\gamma_2}{A_2}u_2$$
+
+$$\dot{x}_3 = -\tfrac{a_3}{A_3}\sqrt{2 g x_3} + \tfrac{1-\gamma_2}{A_3}u_2$$
+
+$$\dot{x}_4 = -\tfrac{a_4}{A_4}\sqrt{2 g x_4} + \tfrac{1-\gamma_1}{A_4}u_1$$
+
+with $x_i$ the level in tank $i$ (cm), $u_k$ the pump-$k$ voltage (V),
+$A_i$ the tank cross-section (cm²), $a_i$ the outlet area (cm²),
+$\gamma_k$ the flow-split ratio, and $g$ gravitational acceleration
+(cm/s²).
+""")
+
+    st.markdown("""
+<div style="margin: 0.75rem 0 1.25rem 0;">
+<table style="border-collapse: collapse; font-size: 0.95rem; margin-bottom: 0.6rem;">
+  <thead>
+    <tr style="border-bottom: 1px solid #dee2e6;">
+      <th style="padding: 0.4rem 0.9rem; text-align: left; font-weight: 600;">Parameter</th>
+      <th style="padding: 0.4rem 0.9rem; text-align: right;">Tank 1</th>
+      <th style="padding: 0.4rem 0.9rem; text-align: right;">Tank 2</th>
+      <th style="padding: 0.4rem 0.9rem; text-align: right;">Tank 3</th>
+      <th style="padding: 0.4rem 0.9rem; text-align: right;">Tank 4</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="padding: 0.3rem 0.9rem;">A<sub>i</sub> &nbsp;(cm²)</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">50.27</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">50.27</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">28.27</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">28.27</td>
+    </tr>
+    <tr>
+      <td style="padding: 0.3rem 0.9rem;">a<sub>i</sub> &nbsp;(cm²)</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">0.233</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">0.242</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">0.127</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">0.127</td>
+    </tr>
+    <tr>
+      <td style="padding: 0.3rem 0.9rem;">x<sub>i</sub><sup>ss</sup> &nbsp;(cm)</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">14.0</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">14.0</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">14.2</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">21.3</td>
+    </tr>
+    <tr>
+      <td style="padding: 0.3rem 0.9rem;">x<sub>i</sub><sup>L</sup>, x<sub>i</sub><sup>U</sup> &nbsp;(cm)</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">7.5, 28.0</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">7.5, 28.0</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">3.5, 28.0</td>
+      <td style="padding: 0.3rem 0.9rem; text-align: right;">4.5, 28.0</td>
+    </tr>
+  </tbody>
+</table>
+
+<div style="font-size: 0.95rem; color: #495057;">
+γ<sub>1</sub> = γ<sub>2</sub> = 0.4 &nbsp;·&nbsp;
+g = 981 cm/s² &nbsp;·&nbsp;
+u<sub>1</sub><sup>ss</sup> = 43.4 V, u<sub>2</sub><sup>ss</sup> = 35.4 V &nbsp;·&nbsp;
+0 ≤ u<sub>k</sub> ≤ 60 V
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown(r"""
+### Deviation variables
+
+The optimal control problem regulates the system about its steady state.
+Define deviations from the operating point:
+
+$$z_i = x_i - x_i^{ss}, \qquad \tilde u_k = u_k - u_k^{ss}$$
+
+so that $z = 0,\; \tilde u = 0$ corresponds to the setpoint
+$(x^{ss}, u^{ss})$.
+
+### Optimal control problem
+
+Given an initial state $x(0) = x^0$ from the sidebar sliders, find pump
+trajectories that drive the system back to steady state:
+
+$$\min_{x(\cdot),\, u(\cdot)} \; \int_0^T \left( \sum_{i=1}^{4} z_i(t)^2 \;+\; \rho \sum_{k=1}^{2} \tilde u_k(t)^2 \right) dt$$
+
+subject to
+
+- the four ODEs above,
+- the deviation-variable definitions $z_i = x_i - x_i^{ss}$ and $\tilde u_k = u_k - u_k^{ss}$,
+- the initial condition $x_i(0) = x_i^0$,
+- pump bounds $0 \le u_k(t) \le 60$ V,
+- and per-tank bounds $x_i^L \le x_i(t) \le x_i^U$ with the values tabulated above.
+
+The horizon $T$, discretization, and control-penalty weight $\rho$ are
+set in the sidebar.
+
+### Solution method
+
+The state and control trajectories are discretized using orthogonal
+collocation on finite elements (Radau-IIA, 3 collocation points),
+following the simultaneous direct-transcription approach in Biegler
+(2010, ch. 10). The resulting nonlinear program is solved with rIPOPT,
+a Rust reimplementation of the IPOPT primal-dual interior-point algorithm.
+
+### References
+
+[1] T. Raff, S. Huber, Z. K. Nagy, and F. Allgöwer, "Nonlinear Model
+Predictive Control of a Four Tank System: An Experimental Stability
+Study," in *Proc. 2006 IEEE Int. Conf. on Control Applications*, Munich,
+Germany, 2006, pp. 237–242.
+[doi:10.1109/CCA.2006.285874](https://doi.org/10.1109/CCA.2006.285874)
+
+[2] L. T. Biegler, *Nonlinear Programming: Concepts, Algorithms, and
+Applications to Chemical Processes*. Philadelphia, PA: SIAM, 2010.
+""")
+
+
 # ── Main layout ───────────────────────────────────────────────────────────────
 #
 # Module-level code runs on every Streamlit rerun. The flow:
@@ -881,7 +1052,7 @@ def build_timeseries(res):
 if "res" not in st.session_state:
     with st.spinner("Running rIPOPT optimization..."):
         try:
-            res = solve_model([z1init, z2init, z3init, z4init], nfe, h_step)
+            res = solve_model([z1init, z2init, z3init, z4init], nfe, h_step, rho)
         except Exception as e:
             st.error(f"Solver error: {e}")
             st.stop()
@@ -894,7 +1065,7 @@ if "res" not in st.session_state:
 if solve_btn:
     with st.spinner("Running rIPOPT optimization..."):
         try:
-            res = solve_model([z1init, z2init, z3init, z4init], nfe, h_step)
+            res = solve_model([z1init, z2init, z3init, z4init], nfe, h_step, rho)
         except Exception as e:
             st.error(f"Solver error: {e}")
             st.stop()
@@ -922,18 +1093,21 @@ st.markdown(
     "</h2>",
     unsafe_allow_html=True,
 )
-_caption_col, _ = st.columns([5, 4])
+_caption_col, _ = st.columns([6, 3])
 with _caption_col:
     st.markdown(
         "Simulate open-loop optimal control of the quadruple-tank process: set "
         "the four initial tank heights with the sidebar sliders and click "
         "**Solve Optimization** to compute pump trajectories that drive the "
         "system back to steady state. The **Simulation** tab animates the "
-        "result, **Plots** shows the time-series, and **Logs** shows rIPOPT's output."
+        "result, **Plots** shows the time-series, **Formulation** explains "
+        "the model, and **Logs** shows rIPOPT's output."
     )
 
-# Three tabs for the three views of the optimization result.
-tab_sim, tab_plots, tab_logs = st.tabs(["▶  Simulation", "📈  Plots", "📋  Logs"])
+# Four tabs: animated schematic, time series, formulation/references, solver log.
+tab_sim, tab_plots, tab_form, tab_logs = st.tabs(
+    ["▶  Simulation", "📈  Plots", "📐  Formulation", "📋  Logs"]
+)
 
 if "res" in st.session_state:
     res = st.session_state["res"]
@@ -943,6 +1117,9 @@ if "res" in st.session_state:
 
     with tab_plots:
         st.plotly_chart(build_timeseries(res), use_container_width=True)
+
+    with tab_form:
+        render_formulation_tab()
 
     with tab_logs:
         # ripopt's stdout was captured into the `log` field by `solve_model`.
