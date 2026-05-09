@@ -138,6 +138,15 @@ def _init_ss():
     st.session_state["x4init"] = XSS[4]
 
 st.sidebar.button("Initialize at Steady State", on_click=_init_ss, use_container_width=True)
+
+# Discretization knobs. The continuous-time ODEs are solved by orthogonal
+# collocation on N finite elements of length h. The user can vary both;
+# changes take effect on the next "Solve Optimization" click.
+st.sidebar.header("Discretization")
+h_step = st.sidebar.slider("Step size, h (s)", 1, 30, 10, 1, key="h_step")
+nfe    = st.sidebar.slider("Finite elements, nfe", 5, 30, 15, 1, key="nfe")
+st.sidebar.caption(f"Total horizon: {h_step * nfe} s")
+
 # `solve_btn` is True for the rerun immediately after the button is clicked.
 # The actual handler is in the main layout section near the bottom of the file.
 solve_btn = st.sidebar.button("Solve Optimization", type="primary", use_container_width=True)
@@ -151,12 +160,14 @@ solve_btn = st.sidebar.button("Solve Optimization", type="primary", use_containe
 # values at element boundaries (z_i0[ii]) match the last collocation point
 # of the previous element, giving a continuous solution.
 
-def solve_model(zi):
+def solve_model(zi, nfe, h):
     m = pyo.ConcreteModel()
 
-    # Discretization sizing: 15 finite elements of 10 s each, with 3
-    # collocation points per element (Radau quadrature).
-    N, ncp = 15, 3
+    # Discretization sizing: `nfe` finite elements of `h` s each, with 3
+    # collocation points per element (Radau quadrature). nfe and h are
+    # exposed in the sidebar so the user can probe the resolution / horizon
+    # trade-off.
+    N, ncp = nfe, 3
 
     # Index sets:
     #   i   = elements 0 .. N-1   (interior of horizon)
@@ -211,7 +222,7 @@ def solve_model(zi):
     m.uss    = pyo.Param(pyo.RangeSet(1, 2), initialize={1: 43.4, 2: 35.4})
     m.g      = pyo.Param(initialize=981)
     m.gamma  = pyo.Param(initialize=.4)
-    m.h      = pyo.Param(initialize=10)
+    m.h      = pyo.Param(initialize=h)
     # Radau collocation matrix: omega[k,c] is the integration weight from
     # collocation point k applied when reconstructing the state at c. With
     # ncp=3 these are the standard Radau-IIA coefficients.
@@ -864,7 +875,7 @@ def build_timeseries(res):
 if "res" not in st.session_state:
     with st.spinner("Running rIPOPT optimization..."):
         try:
-            res = solve_model([z1init, z2init, z3init, z4init])
+            res = solve_model([z1init, z2init, z3init, z4init], nfe, h_step)
         except Exception as e:
             st.error(f"Solver error: {e}")
             st.stop()
@@ -877,7 +888,7 @@ if "res" not in st.session_state:
 if solve_btn:
     with st.spinner("Running rIPOPT optimization..."):
         try:
-            res = solve_model([z1init, z2init, z3init, z4init])
+            res = solve_model([z1init, z2init, z3init, z4init], nfe, h_step)
         except Exception as e:
             st.error(f"Solver error: {e}")
             st.stop()
