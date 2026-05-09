@@ -112,6 +112,7 @@ section[data-testid="stSidebar"] [data-testid="stSlider"] {
     margin-bottom: -0.25rem !important;
 }
 [data-testid="stMainBlockContainer"] {
+    padding-top: 2.5rem !important;
     padding-bottom: 0rem !important;
 }
 </style>
