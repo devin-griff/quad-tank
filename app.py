@@ -367,12 +367,14 @@ def solve_model(zi, nfe, h, rho):
     status = str(result.solver.termination_condition)
 
     # Extract everything the UI needs into plain Python lists. Times are in
-    # seconds (each element is h=10 s long, so element index k → t = 10k).
+    # seconds (each element is h seconds long (user-set via the h_step
+    # slider), so element index k → t = h·k).
     t_pts = list(m.iii)
     return {
         "status": status,
         "log": buf.getvalue(),
-        "t": [k * 10 for k in t_pts],
+        "h": h,
+        "t": [k * h for k in t_pts],
         "z10": [pyo.value(m.z10[i]) for i in t_pts],
         "z20": [pyo.value(m.z20[i]) for i in t_pts],
         "z30": [pyo.value(m.z30[i]) for i in t_pts],
@@ -848,9 +850,10 @@ def build_tank_figure(res):
 def build_timeseries(res):
     # Two time grids: `t` is element boundaries (where states are defined),
     # `ti` is element starts (where pump inputs are defined — they are
-    # piecewise-constant within an element).
+    # piecewise-constant within an element). Element width is h seconds
+    # (user-set via the h_step slider), so element index k → t = h·k.
     t  = res["t"]
-    ti = [k * 10 for k in range(len(res["v1"]))]
+    ti = [k * res["h"] for k in range(len(res["v1"]))]
 
     # Two-row subplot grid; legends are split by row using `legend2`.
     fig = make_subplots(

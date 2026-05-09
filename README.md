@@ -34,7 +34,7 @@ bundled in the wheel); `fly.toml` configures auto-stop machines. Custom domain w
 
 - `app.py` — Streamlit UI, Pyomo model, ripopt wrapper
 - `Quad tank open loop.ipynb` — formulation in a notebook
-- `requirements.txt`, `packages.txt` — Python and system deps
+- `requirements.txt` — Python deps (rIPOPT binary is bundled in the pyomo-ripopt wheel; no system deps needed)
 - `Dockerfile`, `fly.toml`, `.dockerignore` — Fly.io production image config
 - `.github/workflows/deploy.yml` — auto-deploy pipeline
 
