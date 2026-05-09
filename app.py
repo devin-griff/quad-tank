@@ -71,6 +71,12 @@ section[data-testid="stSidebar"] {
     user-select: none;
     -webkit-user-select: none;
 }
+/* Trim the empty band below the last sidebar control (Solve Optimization
+   button) so the sidebar fits a typical viewport without scrolling. */
+section[data-testid="stSidebar"] > div:last-child,
+[data-testid="stSidebarUserContent"] {
+    padding-bottom: 0.5rem !important;
+}
 /* Pin the home-link logo to the viewport's top-left corner at the same
    offset used on the sidebarless Knapsack and Diet apps. position: fixed
    means it sits at the same screen location regardless of sidebar layout. */
