@@ -1031,6 +1031,9 @@ following the simultaneous direct-transcription approach in Biegler
 (2010, ch. 10). The resulting nonlinear program is solved with rIPOPT,
 a Rust reimplementation of the IPOPT primal-dual interior-point algorithm.
 
+See the [companion Jupyter notebook](https://github.com/devin-griff/quad_tank/blob/main/Quad%20tank%20open%20loop.ipynb)
+for the full Pyomo implementation.
+
 ### References
 
 [1] T. Raff, S. Huber, Z. K. Nagy, and F. Allgöwer, "Nonlinear Model
