@@ -1002,6 +1002,11 @@ $(x^{ss}, u^{ss})$.
 
 ### Optimal control problem
 
+Although discretized ODE systems are convenient to implement for digital
+control systems, they are not very convenient to write down cleanly.
+Consider the discrete time formulation as an approximation of the
+following continuous control problem.
+
 Given an initial state $x(0) = x^0$ from the sidebar sliders, find pump
 trajectories that drive the system back to steady state:
 
