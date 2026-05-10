@@ -43,7 +43,7 @@ bundled in the wheel); `fly.toml` configures auto-stop machines. Custom domain w
 [1] T. Raff, S. Huber, Z. K. Nagy, and F. Allgöwer, "Nonlinear Model
 Predictive Control of a Four Tank System: An Experimental Stability
 Study," in *Proc. 2006 IEEE Int. Conf. on Control Applications*, Munich,
-Germany, 2006, pp. 237–242. doi:[10.1109/CCA.2006.285874](https://doi.org/10.1109/CCA.2006.285874)
+Germany, 2006, pp. 237–242. [IEEE Xplore](https://ieeexplore.ieee.org/document/4776652)
 
 [2] L. T. Biegler, *Nonlinear Programming: Concepts, Algorithms, and
 Applications to Chemical Processes*. Philadelphia, PA: SIAM, 2010.
