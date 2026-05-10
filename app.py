@@ -1036,6 +1036,7 @@ Germany, 2006, pp. 237–242.
 
 [2] L. T. Biegler, *Nonlinear Programming: Concepts, Algorithms, and
 Applications to Chemical Processes*. Philadelphia, PA: SIAM, 2010.
+[SIAM](https://epubs.siam.org/doi/book/10.1137/1.9780898719383)
 """)
 
 
