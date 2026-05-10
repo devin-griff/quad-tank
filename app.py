@@ -930,7 +930,7 @@ $$\dot{x}_3 = -\tfrac{a_3}{A_3}\sqrt{2 g x_3} + \tfrac{1-\gamma_2}{A_3}u_2$$
 
 $$\dot{x}_4 = -\tfrac{a_4}{A_4}\sqrt{2 g x_4} + \tfrac{1-\gamma_1}{A_4}u_1$$
 
-with $x_i$ the level in tank $i$ (cm), $u_k$ the pump-$k$ voltage (V),
+with $x_i$ the level in tank $i$ (cm), $u_k$ the pump-$k$ flow rate (cm³/s),
 $A_i$ the tank cross-section (cm²), $a_i$ the outlet area (cm²),
 $\gamma_k$ the flow-split ratio, and $g$ gravitational acceleration
 (cm/s²).
@@ -983,8 +983,8 @@ $\gamma_k$ the flow-split ratio, and $g$ gravitational acceleration
 <div style="font-size: 0.95rem; color: #495057;">
 γ<sub>1</sub> = γ<sub>2</sub> = 0.4 &nbsp;·&nbsp;
 g = 981 cm/s² &nbsp;·&nbsp;
-u<sub>1</sub><sup>ss</sup> = 43.4 V, u<sub>2</sub><sup>ss</sup> = 35.4 V &nbsp;·&nbsp;
-0 ≤ u<sub>k</sub> ≤ 60 V
+u<sub>1</sub><sup>ss</sup> = 43.4 cm³/s, u<sub>2</sub><sup>ss</sup> = 35.4 cm³/s &nbsp;·&nbsp;
+0 ≤ u<sub>k</sub> ≤ 60 cm³/s
 </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1012,7 +1012,7 @@ subject to
 - the four ODEs above,
 - the deviation-variable definitions $z_i = x_i - x_i^{ss}$ and $v_k = u_k - u_k^{ss}$,
 - the initial condition $x_i(0) = x_i^0$,
-- pump bounds $0 \le u_k(t) \le 60$ V,
+- pump bounds $0 \le u_k(t) \le 60$ cm³/s,
 - and per-tank bounds $x_i^L \le x_i(t) \le x_i^U$ with the values tabulated above.
 
 The horizon $T$, discretization, and control-penalty weight $\rho$ are
