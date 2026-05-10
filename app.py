@@ -449,9 +449,9 @@ def build_tank_figure(res):
     GY0 = (RES_TOP + GAMMA_Y) / 2 - GH / 2   # ≈ 1.485
 
     # ── compute flow rates at each time step ─────────────────────────────────
-    # All flows in cm³/s — same units, single normaliser:
-    #   drain_i  = SA_i * sqrt(2g*h_i)         [cm³/s, Torricelli]
-    #   pump_*   = fraction * (v + uss)         [cm³/s]
+    # All flows in ml/s — same units, single normaliser:
+    #   drain_i  = SA_i * sqrt(2g*h_i)         [ml/s, Torricelli]
+    #   pump_*   = fraction * (v + uss)         [ml/s]
 
     t_pts = res["t"]
     n_pts = len(t_pts)
@@ -930,7 +930,7 @@ $$\dot{x}_3 = -\tfrac{a_3}{A_3}\sqrt{2 g x_3} + \tfrac{1-\gamma_2}{A_3}u_2$$
 
 $$\dot{x}_4 = -\tfrac{a_4}{A_4}\sqrt{2 g x_4} + \tfrac{1-\gamma_1}{A_4}u_1$$
 
-with $x_i$ the level in tank $i$ (cm), $u_k$ the pump-$k$ voltage (V),
+with $x_i$ the level in tank $i$ (cm), $u_k$ the pump-$k$ flow rate (ml/s),
 $A_i$ the tank cross-section (cm²), $a_i$ the outlet area (cm²),
 $\gamma_k$ the flow-split ratio, and $g$ gravitational acceleration
 (cm/s²).
@@ -983,8 +983,8 @@ $\gamma_k$ the flow-split ratio, and $g$ gravitational acceleration
 <div style="font-size: 0.95rem; color: #495057;">
 γ<sub>1</sub> = γ<sub>2</sub> = 0.4 &nbsp;·&nbsp;
 g = 981 cm/s² &nbsp;·&nbsp;
-u<sub>1</sub><sup>ss</sup> = 43.4 V, u<sub>2</sub><sup>ss</sup> = 35.4 V &nbsp;·&nbsp;
-0 ≤ u<sub>k</sub> ≤ 60 V
+u<sub>1</sub><sup>ss</sup> = 43.4 ml/s, u<sub>2</sub><sup>ss</sup> = 35.4 ml/s &nbsp;·&nbsp;
+0 ≤ u<sub>k</sub> ≤ 60 ml/s
 </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1012,7 +1012,7 @@ subject to
 - the four ODEs above,
 - the deviation-variable definitions $z_i = x_i - x_i^{ss}$ and $v_k = u_k - u_k^{ss}$,
 - the initial condition $x_i(0) = x_i^0$,
-- pump bounds $0 \le u_k(t) \le 60$ V,
+- pump bounds $0 \le u_k(t) \le 60$ ml/s,
 - and per-tank bounds $x_i^L \le x_i(t) \le x_i^U$ with the values tabulated above.
 
 The horizon $T$, discretization, and control-penalty weight $\rho$ are
