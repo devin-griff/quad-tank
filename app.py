@@ -995,9 +995,9 @@ u<sub>1</sub><sup>ss</sup> = 43.4 V, u<sub>2</sub><sup>ss</sup> = 35.4 V &nbsp;Â
 The optimal control problem regulates the system about its steady state.
 Define deviations from the operating point:
 
-$$z_i = x_i - x_i^{ss}, \qquad \tilde u_k = u_k - u_k^{ss}$$
+$$z_i = x_i - x_i^{ss}, \qquad v_k = u_k - u_k^{ss}$$
 
-so that $z = 0,\; \tilde u = 0$ corresponds to the setpoint
+so that $z = 0,\; v = 0$ corresponds to the setpoint
 $(x^{ss}, u^{ss})$.
 
 ### Optimal control problem
@@ -1005,12 +1005,12 @@ $(x^{ss}, u^{ss})$.
 Given an initial state $x(0) = x^0$ from the sidebar sliders, find pump
 trajectories that drive the system back to steady state:
 
-$$\min_{x(\cdot),\, u(\cdot)} \; \int_0^T \left( \sum_{i=1}^{4} z_i(t)^2 \;+\; \rho \sum_{k=1}^{2} \tilde u_k(t)^2 \right) dt$$
+$$\min_{x(\cdot),\, u(\cdot)} \; \int_0^T \left( \sum_{i=1}^{4} z_i(t)^2 \;+\; \rho \sum_{k=1}^{2} v_k(t)^2 \right) dt$$
 
 subject to
 
 - the four ODEs above,
-- the deviation-variable definitions $z_i = x_i - x_i^{ss}$ and $\tilde u_k = u_k - u_k^{ss}$,
+- the deviation-variable definitions $z_i = x_i - x_i^{ss}$ and $v_k = u_k - u_k^{ss}$,
 - the initial condition $x_i(0) = x_i^0$,
 - pump bounds $0 \le u_k(t) \le 60$ V,
 - and per-tank bounds $x_i^L \le x_i(t) \le x_i^U$ with the values tabulated above.
