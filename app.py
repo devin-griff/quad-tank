@@ -51,7 +51,7 @@ from plotly.subplots import make_subplots
 
 # `set_page_config` must be the first Streamlit call. Wide layout + open
 # sidebar gives the schematic enough horizontal room.
-st.set_page_config(page_title="Quad Tank System", page_icon="favicon.png",
+st.set_page_config(page_title="Quad Tank Control", page_icon="favicon.png",
                    layout="wide", initial_sidebar_state="expanded")
 
 # Solver: ripopt (Rust reimplementation of IPOPT), shipped via the
