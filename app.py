@@ -74,7 +74,7 @@ section[data-testid="stSidebar"] {
     user-select: none;
     -webkit-user-select: none;
 }
-/* Trim the empty band below the last sidebar control (Solve Optimization
+/* Trim the empty band below the last sidebar control (Run Optimizer
    button) so the sidebar fits a typical viewport without scrolling. */
 section[data-testid="stSidebar"] > div:last-child,
 [data-testid="stSidebarUserContent"] {
@@ -173,16 +173,37 @@ st.sidebar.button("Initialize at Steady State", on_click=_init_ss, use_container
 #   ρ      — control-effort weight in the tracking objective. 0 = pure
 #            regulator, larger values smooth the pump trajectories.
 #   h, nfe — orthogonal collocation grid: nfe finite elements of length h
-#            seconds each. Changes take effect on the next Solve click.
+#            seconds each. Changes take effect on the next Run Optimizer click.
 st.sidebar.header("Controller Parameters")
 rho    = st.sidebar.slider("Control penalty, ρ",    0.0, 1.0, 0.0, 0.01, key="rho")
 h_step = st.sidebar.slider("Step size, h (s)",      1,    30,  10,  1,   key="h_step")
 nfe    = st.sidebar.slider("Finite elements, nfe",  5,    30,  15,  1,   key="nfe")
 st.sidebar.caption(f"Total horizon: {h_step * nfe} s")
 
+# Tuple of every input that affects the solver result. Used both to stash
+# alongside `res` after a solve and to compare against the current slider
+# state below, so the Run Optimizer button can grey itself out when there's
+# nothing new to compute. Float equality is reliable here — sliders return
+# the same float for the same position, so an unchanged slider yields an
+# identical tuple element across reruns.
+current_inputs = (x1init, x2init, x3init, x4init, h_step, nfe, rho)
+_cached_res = st.session_state.get("res")
+has_pending_changes = (
+    _cached_res is None or _cached_res.get("inputs") != current_inputs
+)
+
 # `solve_btn` is True for the rerun immediately after the button is clicked.
 # The actual handler is in the main layout section near the bottom of the file.
-solve_btn = st.sidebar.button("Solve Optimization", type="primary", use_container_width=True)
+# `disabled=not has_pending_changes` greys the button out when the cached
+# `res` already reflects the current slider values; the Play button in the
+# Simulation tab is highlighted red instead, signalling that replay is the
+# available action.
+solve_btn = st.sidebar.button(
+    "Run Optimizer",
+    type="primary",
+    use_container_width=True,
+    disabled=not has_pending_changes,
+)
 
 # ── Solver ────────────────────────────────────────────────────────────────────
 #
@@ -1054,7 +1075,7 @@ Applications to Chemical Processes*. Philadelphia, PA: SIAM, 2010.
 #   1. First-load auto-solve. If `res` isn't in session_state yet, run the
 #      solver with the current sidebar values, stash the result, and rerun
 #      so the rest of the script renders against it.
-#   2. Manual solve. If the user clicks "Solve Optimization", same dance.
+#   2. Manual solve. If the user clicks "Run Optimizer", same dance.
 #   3. Toast. After a successful solve we set `solve_status`; on the next
 #      rerun (after the `st.rerun()` above) we pop it and show a toast.
 #   4. Tabs. Simulation (animated schematic), Plots (time series), Logs.
@@ -1069,6 +1090,7 @@ if "res" not in st.session_state:
         except Exception as e:
             st.error(f"Solver error: {e}")
             st.stop()
+    res["inputs"] = current_inputs
     st.session_state["res"] = res
     st.session_state["solve_status"] = res["status"]
     st.session_state["autoplay"] = True
@@ -1083,6 +1105,7 @@ if solve_btn:
             st.error(f"Solver error: {e}")
             st.stop()
 
+    res["inputs"] = current_inputs
     st.session_state["res"] = res
     st.session_state["solve_status"] = res["status"]
     st.session_state["autoplay"] = True
@@ -1114,7 +1137,7 @@ with _caption_col:
     st.markdown(
         "Simulate open-loop optimal control of the quadruple-tank process: set "
         "the four initial tank heights with the sidebar sliders and click "
-        "**Solve Optimization** to compute pump trajectories that drive the "
+        "**Run Optimizer** to compute pump trajectories that drive the "
         "system back to steady state. The **Simulation** tab animates the "
         "result, **Plots** shows the time-series, **Formulation** explains "
         "the model, and **Logs** shows rIPOPT's output."
@@ -1149,30 +1172,89 @@ else:
     # Defensive fallback — should not be reachable under normal flow because
     # the auto-solve above always populates `res`.
     with tab_sim:
-        st.info("Set initial conditions in the sidebar and click **Solve Optimization** to begin.")
+        st.info("Set initial conditions in the sidebar and click **Run Optimizer** to begin.")
 
-# Autoplay: after a solve, simulate a click on Plotly's Play button so the
-# animation starts without the user pressing it. Rendered unconditionally
-# so Streamlit's component diff treats this as one stable element rather
-# than a fresh iframe per solve. The trigger flag is passed inline to the
-# embedded JS, which only acts on it when "true". Known cosmetic issue:
-# the iframe wrapper claims a few pixels of layout space, which can shift
-# the chart slightly on each solve — tracked separately, autoplay stays.
+# Post-render JS doing two things, both keyed to flags set elsewhere on
+# this run:
+#   1. Autoplay — when `_should_autoplay` is true (set after a solve),
+#      simulate a click on Plotly's Play button so the animation starts
+#      without the user pressing it.
+#   2. Play-button highlight — when `_highlight_play` is true (set when
+#      the sliders match the cached `res`, i.e. nothing new to solve),
+#      recolor the Play button to Streamlit's primary red so the user
+#      sees that replay is the live action paired with the now-disabled
+#      Run Optimizer button in the sidebar.
+#
+# We do (2) by injecting a CSS rule with `!important` into the parent
+# document and toggling a class on the Play button's wrapping <g>.
+# Going through Plotly's `updatemenu.bgcolor` doesn't work — that
+# attribute sets only the rect stroke in this Plotly version, leaving
+# the fill at the active-button default — and patching the rect's
+# inline style directly gets wiped on every Plotly redraw during
+# animation. A CSS rule with `!important` wins over Plotly's inline
+# style, and putting the class on <g> (rather than the rect) keeps it
+# attached even if Plotly recreates the inner rect each frame.
+#
+# Rendered unconditionally so Streamlit's component diff treats this as
+# one stable element rather than a fresh iframe per solve. Known
+# cosmetic issue: the iframe wrapper claims a few pixels of layout
+# space, which can shift the chart slightly on each solve — tracked
+# separately.
 _should_autoplay = st.session_state.pop("autoplay", False)
+_highlight_play = not has_pending_changes
 components.html(f"""
 <script>
 (function() {{
-    if (!{str(_should_autoplay).lower()}) return;
-    setTimeout(function() {{
-        const doc = window.parent.document;
-        const texts = doc.querySelectorAll('text');
-        for (const t of texts) {{
-            if (t.textContent.trim() === '▶  Play') {{
-                t.parentElement.dispatchEvent(new MouseEvent('click', {{bubbles: true}}));
-                break;
+    const shouldAutoplay = {str(_should_autoplay).lower()};
+    const highlightPlay = {str(_highlight_play).lower()};
+    const doc = window.parent.document;
+
+    // Inject the highlight stylesheet once per session. Idempotent —
+    // re-renders just no-op past the existence check.
+    if (!doc.getElementById('quad-tank-play-highlight-style')) {{
+        const styleEl = doc.createElement('style');
+        styleEl.id = 'quad-tank-play-highlight-style';
+        styleEl.textContent = `
+            .updatemenu-button.qt-play-highlight > rect {{
+                fill: #FF4B4B !important;
+                stroke: #FF4B4B !important;
             }}
+            .updatemenu-button.qt-play-highlight > text {{
+                fill: #ffffff !important;
+            }}
+        `;
+        doc.head.appendChild(styleEl);
+    }}
+
+    // Plotly may not have rendered the Play button by the time this
+    // iframe loads on a cold start — the chart drawing is async and
+    // can run after our script. Poll every 100 ms (max 30 tries =
+    // 3 s) until the Play button exists, then apply the highlight
+    // and optionally fire autoplay. A single setTimeout was too
+    // brittle on a slow first solve.
+    let tries = 0;
+    const findPlay = () => {{
+        for (const t of doc.querySelectorAll('text')) {{
+            if (t.textContent.trim() === '▶  Play') return t.parentElement;
         }}
-    }}, 1500);
+        return null;
+    }};
+    const tick = () => {{
+        const btnG = findPlay();
+        if (!btnG) {{
+            if (++tries < 30) setTimeout(tick, 100);
+            return;
+        }}
+        if (highlightPlay) {{
+            btnG.classList.add('qt-play-highlight');
+        }} else {{
+            btnG.classList.remove('qt-play-highlight');
+        }}
+        if (shouldAutoplay) {{
+            btnG.dispatchEvent(new MouseEvent('click', {{bubbles: true}}));
+        }}
+    }};
+    tick();
 }})();
 </script>
 """, height=0)
