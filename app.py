@@ -80,6 +80,16 @@ section[data-testid="stSidebar"] > div:last-child,
 [data-testid="stSidebarUserContent"] {
     padding-bottom: 0.5rem !important;
 }
+/* Disabled sidebar buttons (Run Optimizer when the slider state already
+   matches the cached res) should not change the cursor on hover —
+   Streamlit's default `cursor: not-allowed` reads like an error state,
+   but here the disabled-ness is a passive "no work to do" signal paired
+   with the red Play button on the chart. Leave the cursor as the
+   default arrow so the only feedback is visual (greyed text + red Play). */
+section[data-testid="stSidebar"] .stButton > button:disabled,
+section[data-testid="stSidebar"] .stButton > button:disabled:hover {
+    cursor: default !important;
+}
 /* Home-link logo at the very top of the sidebar, in normal document flow
    so it scrolls with the sidebar content (not pinned to the viewport).
    The sidebarless Knapsack and Diet apps still use a position:fixed
@@ -1072,29 +1082,15 @@ Applications to Chemical Processes*. Philadelphia, PA: SIAM, 2010.
 # ── Main layout ───────────────────────────────────────────────────────────────
 #
 # Module-level code runs on every Streamlit rerun. The flow:
-#   1. First-load auto-solve. If `res` isn't in session_state yet, run the
-#      solver with the current sidebar values, stash the result, and rerun
-#      so the rest of the script renders against it.
-#   2. Manual solve. If the user clicks "Run Optimizer", same dance.
-#   3. Toast. After a successful solve we set `solve_status`; on the next
+#   1. Manual solve. If the user clicks "Run Optimizer", run the solver
+#      with the current sidebar values, stash the result, and rerun so
+#      the rest of the script renders against it. No first-load
+#      auto-solve — the page opens cold and waits for the user to click.
+#   2. Toast. After a successful solve we set `solve_status`; on the next
 #      rerun (after the `st.rerun()` above) we pop it and show a toast.
-#   4. Tabs. Simulation (animated schematic), Plots (time series), Logs.
-
-# First-load auto-solve: avoids showing an empty page before the user
-# touches any control. Wrapped in try/except so a missing/broken solver
-# surfaces a clear error instead of a traceback.
-if "res" not in st.session_state:
-    with st.spinner("Running rIPOPT optimization..."):
-        try:
-            res = solve_model([z1init, z2init, z3init, z4init], nfe, h_step, rho)
-        except Exception as e:
-            st.error(f"Solver error: {e}")
-            st.stop()
-    res["inputs"] = current_inputs
-    st.session_state["res"] = res
-    st.session_state["solve_status"] = res["status"]
-    st.session_state["autoplay"] = True
-    st.rerun()
+#   3. Tabs. Simulation (animated schematic), Plots (time series),
+#      Formulation, Logs. Formulation always renders; the others fall
+#      back to an info message until the first solve.
 
 # Manual solve in response to the sidebar button.
 if solve_btn:
@@ -1148,31 +1144,35 @@ tab_sim, tab_plots, tab_form, tab_logs = st.tabs(
     ["▶  Simulation", "📈  Plots", "📐  Formulation", "📋  Logs"]
 )
 
-if "res" in st.session_state:
-    res = st.session_state["res"]
+res = st.session_state.get("res")
 
-    with tab_sim:
+with tab_sim:
+    if res is not None:
         st.plotly_chart(build_tank_figure(res), use_container_width=True)
+    else:
+        st.info("Set initial conditions in the sidebar and click **Run Optimizer** to begin.")
 
-    with tab_plots:
+with tab_plots:
+    if res is not None:
         st.plotly_chart(build_timeseries(res), use_container_width=True)
+    else:
+        st.info("Click **Run Optimizer** to see time-series plots.")
 
-    with tab_form:
-        render_formulation_tab()
+with tab_form:
+    # Formulation is static reference material — always available, no
+    # solve required.
+    render_formulation_tab()
 
-    with tab_logs:
+with tab_logs:
+    if res is not None:
         # ripopt's stdout was captured into the `log` field by `solve_model`.
         log = res.get("log", "")
         if log.strip():
             st.code(log, language=None)
         else:
             st.info("No log output was captured. The solver may be writing directly to the system stdout.")
-
-else:
-    # Defensive fallback — should not be reachable under normal flow because
-    # the auto-solve above always populates `res`.
-    with tab_sim:
-        st.info("Set initial conditions in the sidebar and click **Run Optimizer** to begin.")
+    else:
+        st.info("Click **Run Optimizer** to see solver logs.")
 
 # Post-render JS doing two things, both keyed to flags set elsewhere on
 # this run:
