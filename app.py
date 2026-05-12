@@ -1150,7 +1150,31 @@ with tab_sim:
     if res is not None:
         st.plotly_chart(build_tank_figure(res), use_container_width=True)
     else:
-        st.info("Set initial conditions in the sidebar and click **Run Optimizer** to begin.")
+        # Cold load: show the system at its steady state, with the same
+        # chart shape (Play/Pause buttons + slider) as a post-solve view
+        # but with all the controls visually muted and non-interactive
+        # (handled by the post-render JS below). The pseudo-res is `nfe+1`
+        # identical zero-deviation states + `nfe` zero pump inputs, so the
+        # slider populates to the user's currently selected horizon and
+        # the schematic draws tank fills at the XSS levels. Values match
+        # what `solve_model` would return if the system were already at
+        # steady state and h_step / nfe matched the sliders, so no code
+        # path in `build_tank_figure` needs to special-case this.
+        n_state = int(nfe) + 1
+        n_input = int(nfe)
+        steady_state_res = {
+            "h": float(h_step),
+            "t": [k * float(h_step) for k in range(n_state)],
+            "z10": [0.0] * n_state,
+            "z20": [0.0] * n_state,
+            "z30": [0.0] * n_state,
+            "z40": [0.0] * n_state,
+            "v1": [0.0] * n_input,
+            "v2": [0.0] * n_input,
+        }
+        st.plotly_chart(
+            build_tank_figure(steady_state_res), use_container_width=True
+        )
 
 with tab_plots:
     if res is not None:
@@ -1201,16 +1225,23 @@ with tab_logs:
 # space, which can shift the chart slightly on each solve — tracked
 # separately.
 _should_autoplay = st.session_state.pop("autoplay", False)
-_highlight_play = not has_pending_changes
+# Highlight Play only when there's a real solved result (otherwise the
+# chart is in steady-state preview mode and the controls are muted).
+_highlight_play = (res is not None) and (not has_pending_changes)
+# Mute Play/Pause/slider on the cold-load steady-state preview — they're
+# kept visible so the page doesn't feel empty, but they should not be
+# clickable since there's no animation to drive.
+_disable_controls = res is None
 components.html(f"""
 <script>
 (function() {{
     const shouldAutoplay = {str(_should_autoplay).lower()};
     const highlightPlay = {str(_highlight_play).lower()};
+    const disableControls = {str(_disable_controls).lower()};
     const doc = window.parent.document;
 
-    // Inject the highlight stylesheet once per session. Idempotent —
-    // re-renders just no-op past the existence check.
+    // Inject the highlight + disable stylesheet once per session.
+    // Idempotent — re-renders just no-op past the existence check.
     if (!doc.getElementById('quad-tank-play-highlight-style')) {{
         const styleEl = doc.createElement('style');
         styleEl.id = 'quad-tank-play-highlight-style';
@@ -1222,36 +1253,62 @@ components.html(f"""
             .updatemenu-button.qt-play-highlight > text {{
                 fill: #ffffff !important;
             }}
+            /* Visually muted + non-interactive Play/Pause for the
+               cold-load steady-state preview. Opacity on the wrapping
+               <g> dims rect + text together; pointer-events:none stops
+               clicks at the SVG level (Plotly's own handler doesn't see
+               the event). */
+            .updatemenu-button.qt-controls-disabled {{
+                opacity: 0.45;
+                cursor: default !important;
+                pointer-events: none !important;
+            }}
+            /* Slider — same treatment. Plotly's slider container class
+               is slider-container; muting opacity and blocking pointer
+               events stops the drag handle and step ticks from firing
+               animate calls. */
+            .slider-container.qt-controls-disabled {{
+                opacity: 0.45;
+                pointer-events: none !important;
+            }}
         `;
         doc.head.appendChild(styleEl);
     }}
 
-    // Plotly may not have rendered the Play button by the time this
-    // iframe loads on a cold start — the chart drawing is async and
-    // can run after our script. Poll every 100 ms (max 30 tries =
-    // 3 s) until the Play button exists, then apply the highlight
-    // and optionally fire autoplay. A single setTimeout was too
-    // brittle on a slow first solve.
+    // Plotly may not have rendered the buttons / slider by the time this
+    // iframe loads on a cold start — the chart drawing is async and can
+    // run after our script. Poll every 100 ms (max 30 tries = 3 s) until
+    // the Play button exists, then apply the highlight + disabled
+    // classes and optionally fire autoplay.
     let tries = 0;
-    const findPlay = () => {{
+    const findByText = (label) => {{
         for (const t of doc.querySelectorAll('text')) {{
-            if (t.textContent.trim() === '▶  Play') return t.parentElement;
+            if (t.textContent.trim() === label) return t.parentElement;
         }}
         return null;
     }};
     const tick = () => {{
-        const btnG = findPlay();
-        if (!btnG) {{
+        const playBtn = findByText('▶  Play');
+        if (!playBtn) {{
             if (++tries < 30) setTimeout(tick, 100);
             return;
         }}
-        if (highlightPlay) {{
-            btnG.classList.add('qt-play-highlight');
-        }} else {{
-            btnG.classList.remove('qt-play-highlight');
-        }}
-        if (shouldAutoplay) {{
-            btnG.dispatchEvent(new MouseEvent('click', {{bubbles: true}}));
+        const pauseBtn = findByText('⏸  Pause');
+        const slider = doc.querySelector('.slider-container');
+
+        const setClass = (el, cls, on) => {{
+            if (!el) return;
+            if (on) el.classList.add(cls);
+            else el.classList.remove(cls);
+        }};
+
+        setClass(playBtn, 'qt-play-highlight', highlightPlay);
+        setClass(playBtn, 'qt-controls-disabled', disableControls);
+        setClass(pauseBtn, 'qt-controls-disabled', disableControls);
+        setClass(slider, 'qt-controls-disabled', disableControls);
+
+        if (shouldAutoplay && !disableControls) {{
+            playBtn.dispatchEvent(new MouseEvent('click', {{bubbles: true}}));
         }}
     }};
     tick();
