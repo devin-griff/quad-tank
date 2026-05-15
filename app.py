@@ -1147,34 +1147,32 @@ tab_sim, tab_plots, tab_form, tab_logs = st.tabs(
 res = st.session_state.get("res")
 
 with tab_sim:
-    if res is not None:
-        st.plotly_chart(build_tank_figure(res), use_container_width=True)
-    else:
-        # Cold load: show the system at its steady state, with the same
-        # chart shape (Play/Pause buttons + slider) as a post-solve view
-        # but with all the controls visually muted and non-interactive
-        # (handled by the post-render JS below). The pseudo-res is `nfe+1`
-        # identical zero-deviation states + `nfe` zero pump inputs, so the
-        # slider populates to the user's currently selected horizon and
-        # the schematic draws tank fills at the XSS levels. Values match
-        # what `solve_model` would return if the system were already at
-        # steady state and h_step / nfe matched the sliders, so no code
-        # path in `build_tank_figure` needs to special-case this.
+    if has_pending_changes:
+        # Run Optimizer is enabled — the sidebar holds an initial condition
+        # that hasn't been solved (cold load, or inputs changed since the
+        # last solve). Preview it: a static pseudo-res holding the slider
+        # heights across every frame with idle pumps, so the schematic
+        # shows the tanks where the sliders put them. Same shape as a real
+        # solve, so build_tank_figure needs no special-casing; the
+        # Play/Pause/slider controls are muted by the post-render JS below
+        # since there's no trajectory to animate.
         n_state = int(nfe) + 1
         n_input = int(nfe)
-        steady_state_res = {
+        preview_res = {
             "h": float(h_step),
             "t": [k * float(h_step) for k in range(n_state)],
-            "z10": [0.0] * n_state,
-            "z20": [0.0] * n_state,
-            "z30": [0.0] * n_state,
-            "z40": [0.0] * n_state,
+            "z10": [z1init] * n_state,
+            "z20": [z2init] * n_state,
+            "z30": [z3init] * n_state,
+            "z40": [z4init] * n_state,
             "v1": [0.0] * n_input,
             "v2": [0.0] * n_input,
         }
         st.plotly_chart(
-            build_tank_figure(steady_state_res), use_container_width=True
+            build_tank_figure(preview_res), use_container_width=True
         )
+    else:
+        st.plotly_chart(build_tank_figure(res), use_container_width=True)
 
 with tab_plots:
     if res is not None:
@@ -1226,12 +1224,13 @@ with tab_logs:
 # separately.
 _should_autoplay = st.session_state.pop("autoplay", False)
 # Highlight Play only when there's a real solved result (otherwise the
-# chart is in steady-state preview mode and the controls are muted).
+# chart is in slider-preview mode and the controls are muted).
 _highlight_play = (res is not None) and (not has_pending_changes)
-# Mute Play/Pause/slider on the cold-load steady-state preview — they're
-# kept visible so the page doesn't feel empty, but they should not be
-# clickable since there's no animation to drive.
-_disable_controls = res is None
+# Mute Play/Pause/slider whenever the schematic is a static slider
+# preview (cold load, or sidebar inputs changed since the last solve) —
+# kept visible so the page doesn't feel empty, but not clickable since
+# there's no animation to drive.
+_disable_controls = has_pending_changes
 components.html(f"""
 <script>
 (function() {{
@@ -1259,6 +1258,15 @@ components.html(f"""
                clicks at the SVG level (Plotly's own handler doesn't see
                the event). */
             .updatemenu-button.qt-controls-disabled {{
+                opacity: 0.45;
+                cursor: default !important;
+                pointer-events: none !important;
+            }}
+            /* Greys the Play button while the animation is actively
+               playing (the available action is Pause, not Play). Same
+               treatment as qt-controls-disabled but applied only to
+               Play. Toggled by JS on play/pause/end-of-play. */
+            .updatemenu-button.qt-play-active {{
                 opacity: 0.45;
                 cursor: default !important;
                 pointer-events: none !important;
@@ -1306,6 +1314,83 @@ components.html(f"""
         setClass(playBtn, 'qt-controls-disabled', disableControls);
         setClass(pauseBtn, 'qt-controls-disabled', disableControls);
         setClass(slider, 'qt-controls-disabled', disableControls);
+
+        // Changes 2 + 3 share this plumbing. (2) The Play button greys
+        // out while the animation is actively playing; (3) when a full
+        // play-through ends, the schematic snaps back to frame 0 so Play
+        // can replay from the start. The `__qtPlaying` flag on the graph
+        // div distinguishes a Play run from a manual scrub or Pause. End-
+        // of-play is detected via `plotly_animatingframe` checking when
+        // the active slider step hits the last frame — `plotly_animated`
+        // doesn't fire reliably for long autoplay queues in this Plotly
+        // build, so we use the per-frame event with both as a belt-and-
+        // suspenders trigger. Stale state is cleared on every script run
+        // because Streamlit may re-render the chart between solves.
+        const gd = doc.querySelector('.js-plotly-plot');
+        if (gd) {{
+            gd.__qtPlaying = false;
+            playBtn.classList.remove('qt-play-active');
+        }}
+        if (gd && gd.on && !gd._qtAnimResetWired) {{
+            gd._qtAnimResetWired = true;
+            const setPlayActive = (on) => {{
+                const pb = [...doc.querySelectorAll('.updatemenu-button')]
+                    .find(b => (b.textContent || '').indexOf('Play') !== -1);
+                if (!pb) return;
+                if (on) pb.classList.add('qt-play-active');
+                else pb.classList.remove('qt-play-active');
+            }};
+            let resetPending = false;
+            const doReset = () => {{
+                gd.__qtPlaying = false;
+                setPlayActive(false);
+                const P = window.parent.Plotly;
+                if (P && P.animate) {{
+                    P.animate(gd, ['0'], {{
+                        mode: 'immediate',
+                        frame: {{duration: 0}},
+                        transition: {{duration: 0}},
+                    }});
+                }}
+            }};
+            const triggerReset = () => {{
+                if (resetPending) return;
+                resetPending = true;
+                setTimeout(() => {{
+                    resetPending = false;
+                    if (gd.__qtPlaying) doReset();
+                }}, 300);
+            }};
+            gd.addEventListener('click', (e) => {{
+                const btn = e.target.closest &&
+                            e.target.closest('.updatemenu-button');
+                if (!btn) return;
+                const txt = btn.textContent || '';
+                if (txt.indexOf('Play') !== -1) {{
+                    gd.__qtPlaying = true;
+                    setPlayActive(true);
+                }} else if (txt.indexOf('Pause') !== -1) {{
+                    gd.__qtPlaying = false;
+                    setPlayActive(false);
+                }}
+            }}, true);
+            gd.addEventListener('mousedown', (e) => {{
+                if (e.target && e.target.closest &&
+                        e.target.closest('.slider-container')) {{
+                    gd.__qtPlaying = false;
+                    setPlayActive(false);
+                }}
+            }}, true);
+            const checkAtEnd = () => {{
+                if (!gd.__qtPlaying) return;
+                const s = gd._fullLayout && gd._fullLayout.sliders &&
+                          gd._fullLayout.sliders[0];
+                if (!s || !s.steps) return;
+                if (s.active === s.steps.length - 1) triggerReset();
+            }};
+            gd.on('plotly_animatingframe', checkAtEnd);
+            gd.on('plotly_animated', checkAtEnd);
+        }}
 
         if (shouldAutoplay && !disableControls) {{
             playBtn.dispatchEvent(new MouseEvent('click', {{bubbles: true}}));
