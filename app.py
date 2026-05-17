@@ -33,7 +33,7 @@
 #   5. build_tank_figure      — assembles the animated process schematic.
 #   6. build_timeseries       — small subplot grid of the optimized trajectories.
 #   7. render_formulation_tab — static markdown for the Formulation tab.
-#   8. Main layout            — auto-solve on first load, then four tabs.
+#   8. Main layout            — manual-solve flow + four tabs (no auto-solve).
 # =============================================================================
 
 import base64
@@ -246,10 +246,14 @@ def solve_model(zi, nfe, h, rho):
     m.t   = pyo.Set(initialize=pyo.RangeSet(1, 4))
 
     # State variables. For each tank i in 1..4:
-    #   z_i0[ii] : the deviation level at element-boundary ii.
+    #   z_i0[ii] : the deviation level at element-boundary ii (unbounded —
+    #              continuity with z_i[i-1, ncp] is enforced by constraint,
+    #              and the surrounding collocation values are bounded).
     #   z_i[i,c] : the deviation level at collocation point c of element i.
-    #   z_i_dot[i,c] : the time derivative at the same collocation point.
-    # Bounds keep absolute heights in physically meaningful ranges.
+    #              Bounds on these keep absolute heights in physically
+    #              meaningful ranges given the steady-state offsets zss.
+    #   z_i_dot[i,c] : the time derivative at the same collocation point
+    #                  (unbounded — derived from z via the ODE constraints).
     m.z10 = pyo.Var(pyo.RangeSet(0, N))
     m.z20 = pyo.Var(pyo.RangeSet(0, N))
     m.z30 = pyo.Var(pyo.RangeSet(0, N))
@@ -1196,7 +1200,7 @@ with tab_logs:
     else:
         st.info("Click **Run Optimizer** to see solver logs.")
 
-# Post-render JS doing two things, both keyed to flags set elsewhere on
+# Post-render JS doing four things, all keyed to flags set elsewhere on
 # this run:
 #   1. Autoplay — when `_should_autoplay` is true (set after a solve),
 #      simulate a click on Plotly's Play button so the animation starts
@@ -1206,9 +1210,16 @@ with tab_logs:
 #      recolor the Play button to Streamlit's primary red so the user
 #      sees that replay is the live action paired with the now-disabled
 #      Run Optimizer button in the sidebar.
+#   3. Mute Play/Pause/slider while the schematic is a static slider-
+#      preview (cold load, or sidebar inputs changed since the last
+#      solve) — toggled via the `qt-controls-disabled` class.
+#   4. Grey the Play button while animation is actively playing (the
+#      live action then is Pause, not Play) and snap back to frame 0
+#      when a full play-through ends — toggled via `qt-play-active`.
 #
-# We do (2) by injecting a CSS rule with `!important` into the parent
-# document and toggling a class on the Play button's wrapping <g>.
+# Each toggled effect (2, 3, 4) is delivered by a CSS rule with
+# `!important` injected into the parent document, then turned on/off by
+# class names on the Play button's wrapping <g> or the slider container.
 # Going through Plotly's `updatemenu.bgcolor` doesn't work — that
 # attribute sets only the rect stroke in this Plotly version, leaving
 # the fill at the active-button default — and patching the rect's
