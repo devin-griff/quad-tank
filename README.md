@@ -2,7 +2,7 @@
 
 A Streamlit app for the quadruple-tank process: open-loop optimal control of
 inlet flows driving tank levels to setpoints (Pyomo + ripopt NLP). The
-in-app **Formulation** tab summarizes the equations and cites the source
+in-app **📐 Formulation** tab summarizes the equations and cites the source
 papers — see [References](#references) below.
 
 **Live demo:** https://quadtank.griffith-pse.com  
