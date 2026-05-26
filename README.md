@@ -48,3 +48,8 @@ Germany, 2006, pp. 237–242. [IEEE Xplore](https://ieeexplore.ieee.org/document
 [2] L. T. Biegler, *Nonlinear Programming: Concepts, Algorithms, and
 Applications to Chemical Processes*. Philadelphia, PA: SIAM, 2010.
 [SIAM](https://epubs.siam.org/doi/book/10.1137/1.9780898719383)
+
+[3] M. L. Bynum, G. A. Hackebeil, W. E. Hart, C. D. Laird, B. L. Nicholson,
+J. D. Siirola, J.-P. Watson, and D. L. Woodruff, *Pyomo — Optimization
+Modeling in Python*, 3rd ed. Cham: Springer, 2021.
+[Springer](https://link.springer.com/book/10.1007/978-3-030-68928-5)
