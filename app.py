@@ -95,7 +95,7 @@ section[data-testid="stSidebar"] .stButton > button:disabled:hover {
    The sidebarless Knapsack and Diet apps still use a position:fixed
    variant of this same class — those have no sidebar to anchor to. */
 .home-logo-corner {
-    display: block;
+    display: inline-block;   /* shrink to the icon so only the G is clickable */
     margin: 0 0 0.75rem;
 }
 .home-logo-corner img {
