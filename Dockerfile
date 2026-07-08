@@ -15,7 +15,7 @@ COPY app.py favicon.png ./
 # inject Open Graph + Twitter Card meta tags so links to this app on
 # *.griffith-pse.com unfurl as a rich card on LinkedIn / Slack / iMessage.
 RUN STATIC=$(python -c "import streamlit, os; print(os.path.join(os.path.dirname(streamlit.__file__), 'static'))") \
-    && sed -i 's|<title>Streamlit</title>|<title>Quad Tank Control</title>|' "$STATIC/index.html" \
+    && sed -i 's|<title>Streamlit</title>|<title>Quad Tank</title>|' "$STATIC/index.html" \
     && sed -i 's|</head>|<link rel="icon" type="image/png" href="./favicon.png"/><meta property="og:type" content="website"/><meta property="og:title" content="Quad Tank Control"/><meta property="og:description" content="Open-loop optimal control of the four-tank benchmark via Pyomo + rIPOPT. Set initial heights, hit Solve, watch trajectories."/><meta property="og:image" content="https://griffith-pse.com/images/quad-tank.png"/><meta property="og:site_name" content="Griffith PSE"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="Quad Tank Control"/><meta name="twitter:description" content="Open-loop optimal control of the four-tank benchmark via Pyomo + rIPOPT. Set initial heights, hit Solve, watch trajectories."/><meta name="twitter:image" content="https://griffith-pse.com/images/quad-tank.png"/></head>|' "$STATIC/index.html" \
     && cp /app/favicon.png "$STATIC/favicon.png" && cp /app/favicon.png "$STATIC/favicon.ico"
 
