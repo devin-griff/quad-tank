@@ -1,7 +1,7 @@
 # =============================================================================
-# Quad-tank Open-loop Optimizer — a Streamlit tutorial app.
+# Quad-tank Open-loop Optimizer: a Streamlit tutorial app.
 #
-# This file builds an interactive web app for the quadruple-tank process — a
+# This file builds an interactive web app for the quadruple-tank process: a
 # classic chemical-engineering benchmark with two pumps feeding four tanks
 # arranged in a 2x2 layout. Each pump's flow is split between a directly-fed
 # lower tank and a diagonally-paired upper tank that drains into the *other*
@@ -15,25 +15,25 @@
 # both are cited from the in-app `📐 Formulation` tab.
 #
 # Library roadmap:
-#   - streamlit  — UI framework. Each interaction reruns this script
+#   - streamlit : UI framework. Each interaction reruns this script
 #                  top-to-bottom; persistent values live in `st.session_state`.
-#   - pyomo      — algebraic modeling: sets, params, vars, constraints,
+#   - pyomo     : algebraic modeling: sets, params, vars, constraints,
 #                  objective. Continuous variables only (no integers).
-#   - ripopt     — the NLP solver, a Rust reimplementation of IPOPT
+#   - ripopt    : the NLP solver, a Rust reimplementation of IPOPT
 #                  (primal-dual interior-point). Called as a subprocess
 #                  via Pyomo. Binary ships in the `pyomo-ripopt` wheel.
-#   - plotly     — both the animated schematic (Plotly frames + Play/Pause)
+#   - plotly    : both the animated schematic (Plotly frames + Play/Pause)
 #                  and the time-series subplots.
 #
 # File roadmap:
 #   1. Page config.
 #   2. CSS / sidebar layout tweaks.
-#   3. Sidebar widgets — initial tank heights, controller params, Solve button.
-#   4. solve_model            — builds and solves the Pyomo NLP.
-#   5. build_tank_figure      — assembles the animated process schematic.
-#   6. build_timeseries       — small subplot grid of the optimized trajectories.
-#   7. render_formulation_tab — static markdown for the Formulation tab.
-#   8. Main layout            — manual-solve flow + four tabs (no auto-solve).
+#   3. Sidebar widgets: initial tank heights, controller params, Solve button.
+#   4. solve_model           : builds and solves the Pyomo NLP.
+#   5. build_tank_figure     : assembles the animated process schematic.
+#   6. build_timeseries      : small subplot grid of the optimized trajectories.
+#   7. render_formulation_tab: static markdown for the Formulation tab.
+#   8. Main layout           : manual-solve flow + four tabs (no auto-solve).
 # =============================================================================
 
 import base64
@@ -55,10 +55,10 @@ st.set_page_config(page_title="Quad Tank", page_icon="favicon.png",
                    layout="wide", initial_sidebar_state="expanded")
 
 # Solver: ripopt (Rust reimplementation of IPOPT), shipped via the
-# `pyomo-ripopt` wheel, which bundles the solver binary — no system install
+# `pyomo-ripopt` wheel, which bundles the solver binary: no system install
 # required. Pyomo finds it through SolverFactory("ripopt") below.
 
-# Steady-state tank heights (cm) — the reference point the controller drives
+# Steady-state tank heights (cm): the reference point the controller drives
 # back to. The optimization works in deviation variables (z = x - x_ss) but
 # the UI displays absolute heights, so XSS is used to convert between them.
 XSS = {1: 14.0, 2: 14.0, 3: 14.2, 4: 21.3}
@@ -81,7 +81,7 @@ section[data-testid="stSidebar"] > div:last-child,
     padding-bottom: 0.5rem !important;
 }
 /* Disabled sidebar buttons (Run Optimizer when the slider state already
-   matches the cached res) should not change the cursor on hover —
+   matches the cached res) should not change the cursor on hover -
    Streamlit's default `cursor: not-allowed` reads like an error state,
    but here the disabled-ness is a passive "no work to do" signal paired
    with the red Play button on the chart. Leave the cursor as the
@@ -93,7 +93,7 @@ section[data-testid="stSidebar"] .stButton > button:disabled:hover {
 /* Home-link logo at the very top of the sidebar, in normal document flow
    so it scrolls with the sidebar content (not pinned to the viewport).
    The sidebarless Knapsack and Diet apps still use a position:fixed
-   variant of this same class — those have no sidebar to anchor to. */
+   variant of this same class: those have no sidebar to anchor to. */
 .home-logo-corner {
     display: inline-block;   /* shrink to the icon so only the G is clickable */
     margin: 0 0 0.75rem;
@@ -134,7 +134,7 @@ section[data-testid="stSidebar"] [data-testid="stSlider"] {
 # the top of the sidebar (the upper-left of the page when expanded), so
 # it's visually consistent with the corner-pinned logo on the sidebarless
 # Knapsack and Diet apps. Image is embedded from the local favicon.png as
-# a base64 data URL — the link still navigates to griffith-pse.com when
+# a base64 data URL: the link still navigates to griffith-pse.com when
 # clicked, but loading the page itself doesn't make any third-party request.
 _FAVICON_DATA_URL = "data:image/png;base64," + base64.b64encode(
     (Path(__file__).parent / "favicon.png").read_bytes()
@@ -142,7 +142,7 @@ _FAVICON_DATA_URL = "data:image/png;base64," + base64.b64encode(
 st.sidebar.markdown(
     f'<a class="home-logo-corner" href="https://griffith-pse.com" target="_self">'
     f'<img src="{_FAVICON_DATA_URL}" '
-        f'alt="Griffith PSE — home" />'
+        f'alt="Griffith PSE: home" />'
     f'</a>',
     unsafe_allow_html=True,
 )
@@ -180,9 +180,9 @@ def _init_ss():
 st.sidebar.button("Initialize at Steady State", on_click=_init_ss, use_container_width=True)
 
 # Controller parameters: objective weighting + discretization grid.
-#   ρ      — control-effort weight in the tracking objective. 0 = pure
+#   ρ     : control-effort weight in the tracking objective. 0 = pure
 #            regulator, larger values smooth the pump trajectories.
-#   h, nfe — orthogonal collocation grid: nfe finite elements of length h
+#   h, nfe: orthogonal collocation grid: nfe finite elements of length h
 #            seconds each. Changes take effect on the next Run Optimizer click.
 st.sidebar.header("Controller Parameters")
 rho    = st.sidebar.slider("Control penalty, ρ",    0.0, 1.0, 0.0, 0.01, key="rho")
@@ -193,7 +193,7 @@ st.sidebar.caption(f"Total horizon: {h_step * nfe} s")
 # Tuple of every input that affects the solver result. Used both to stash
 # alongside `res` after a solve and to compare against the current slider
 # state below, so the Run Optimizer button can grey itself out when there's
-# nothing new to compute. Float equality is reliable here — sliders return
+# nothing new to compute. Float equality is reliable here: sliders return
 # the same float for the same position, so an unchanged slider yields an
 # identical tuple element across reruns.
 current_inputs = (x1init, x2init, x3init, x4init, h_step, nfe, rho)
@@ -246,14 +246,14 @@ def solve_model(zi, nfe, h, rho):
     m.t   = pyo.Set(initialize=pyo.RangeSet(1, 4))
 
     # State variables. For each tank i in 1..4:
-    #   z_i0[ii] : the deviation level at element-boundary ii (unbounded —
+    #   z_i0[ii] : the deviation level at element-boundary ii (unbounded -
     #              continuity with z_i[i-1, ncp] is enforced by constraint,
     #              and the surrounding collocation values are bounded).
     #   z_i[i,c] : the deviation level at collocation point c of element i.
     #              Bounds on these keep absolute heights in physically
     #              meaningful ranges given the steady-state offsets zss.
     #   z_i_dot[i,c] : the time derivative at the same collocation point
-    #                  (unbounded — derived from z via the ODE constraints).
+    #                  (unbounded: derived from z via the ODE constraints).
     m.z10 = pyo.Var(pyo.RangeSet(0, N))
     m.z20 = pyo.Var(pyo.RangeSet(0, N))
     m.z30 = pyo.Var(pyo.RangeSet(0, N))
@@ -421,13 +421,13 @@ def solve_model(zi, nfe, h, rho):
 
 # ── Animated schematic ────────────────────────────────────────────────────────
 #
-# `build_tank_figure` returns a plotly Figure with animation frames — one
+# `build_tank_figure` returns a plotly Figure with animation frames: one
 # per element boundary in the optimization horizon. The figure has three
 # layers built up over the function:
-#   1. Static `shapes` — tanks, walls, pipes, valves, pumps, gauges.
-#   2. Animated `traces` — water fill in each tank, flow streams, pump
+#   1. Static `shapes`: tanks, walls, pipes, valves, pumps, gauges.
+#   2. Animated `traces`: water fill in each tank, flow streams, pump
 #      gauge fills, water-level labels. Rebuilt once per frame.
-#   3. Layout — Play/Pause buttons + frame slider.
+#   3. Layout: Play/Pause buttons + frame slider.
 # The function is long because every shape is positioned by hand; once the
 # coordinate system is set up, each chunk is independent and additive.
 
@@ -440,13 +440,13 @@ def build_tank_figure(res):
     # x range ≈ 12 units wide, y range ≈ 7.4 units tall → ~0.62 aspect ratio.
     # Tank boundaries: (x_left, y_bottom, x_right, y_top)
     TB = {
-        1: (1.2, 1.5, 4.8, 3.7),   # bottom-left  (large) — raised for visible drain gap
-        2: (5.2, 1.5, 8.8, 3.7),   # bottom-right (large) — raised for visible drain gap
+        1: (1.2, 1.5, 4.8, 3.7),   # bottom-left  (large): raised for visible drain gap
+        2: (5.2, 1.5, 8.8, 3.7),   # bottom-right (large): raised for visible drain gap
         3: (1.2, 4.6, 4.8, 6.4),   # top-left     (small)
         4: (5.2, 4.6, 8.8, 6.4),   # top-right    (small)
     }
 
-    DISP_MAX  = 30.0   # cm — full-scale height for display
+    DISP_MAX  = 30.0   # cm: full-scale height for display
     PW        = 0.13   # pipe half-width
     WALL      = 0.12   # tank wall thickness
     TOP_Y_U1  = 7.15   # u1 overhead pipe centre y  (u1 left → T4 right, higher)
@@ -457,14 +457,14 @@ def build_tank_figure(res):
     # Outer (pump) pipe x positions
     LP = 0.42;  RP = 9.58
 
-    # Left side — γ feed on the LEFT (close to pump), drain on the RIGHT
+    # Left side: γ feed on the LEFT (close to pump), drain on the RIGHT
     # so the γ₁ horizontal branch (LP → LX_P) never crosses the drain pipe.
-    LX_P = 1.8   # pump-direct — γ₁ fraction of u₁ ↓ Tank 1  (left side of tank)
-    LX_D = 3.2   # drain pipe  — Tank 3 ↓ Tank 1, top-feed ↓ Tank 3 (right side)
+    LX_P = 1.8   # pump-direct: γ₁ fraction of u₁ ↓ Tank 1  (left side of tank)
+    LX_D = 3.2   # drain pipe : Tank 3 ↓ Tank 1, top-feed ↓ Tank 3 (right side)
 
-    # Right side — mirror: γ feed on the RIGHT (close to pump), drain on the LEFT
-    RX_P = 8.2   # pump-direct — γ₂ fraction of u₂ ↓ Tank 2  (right side of tank)
-    RX_D = 6.8   # drain pipe  — Tank 4 ↓ Tank 2, top-feed ↓ Tank 4 (left side)
+    # Right side: mirror: γ feed on the RIGHT (close to pump), drain on the LEFT
+    RX_P = 8.2   # pump-direct: γ₂ fraction of u₂ ↓ Tank 2  (right side of tank)
+    RX_D = 6.8   # drain pipe : Tank 4 ↓ Tank 2, top-feed ↓ Tank 4 (left side)
 
     # ── physics constants ────────────────────────────────────────────────────
     _G    = 981
@@ -484,7 +484,7 @@ def build_tank_figure(res):
     GY0 = (RES_TOP + GAMMA_Y) / 2 - GH / 2   # ≈ 1.485
 
     # ── compute flow rates at each time step ─────────────────────────────────
-    # All flows in ml/s — same units, single normaliser:
+    # All flows in ml/s: same units, single normaliser:
     #   drain_i  = SA_i * sqrt(2g*h_i)         [ml/s, Torricelli]
     #   pump_*   = fraction * (v + uss)         [ml/s]
 
@@ -536,15 +536,15 @@ def build_tank_figure(res):
 
     # SEGS: (flow_dict, key, pipe_x, y_high, y_low, colour, normaliser)
     SEGS = [
-        # Torricelli drains — water starts at bottom of gray nozzle pipe
+        # Torricelli drains: water starts at bottom of gray nozzle pipe
         (drain,  1, LX_D, TB[1][1] - 0.50*(TB[1][1]-RES_TOP), 0.0, C_WATER, max_flow),
         (drain,  2, RX_D, TB[2][1] - 0.50*(TB[2][1]-RES_TOP), 0.0, C_WATER, max_flow),
         (drain,  3, LX_D, TB[1][3],  TB[1][1],  C_WATER, max_flow),  # T3 → T1
         (drain,  4, RX_D, TB[2][3],  TB[2][1],  C_WATER, max_flow),  # T4 → T2
-        # γ direct pump feeds — bottom of feed pipe = top of lower tank
+        # γ direct pump feeds: bottom of feed pipe = top of lower tank
         (p_dir,  1, LX_P, TB[1][3],  TB[1][1],  C_WATER, max_flow),  # γ×u1 → T1
         (p_dir,  2, RX_P, TB[2][3],  TB[2][1],  C_WATER, max_flow),  # γ×u2 → T2
-        # (1-γ) overhead feeds — bottom of feed pipe = top of upper tank
+        # (1-γ) overhead feeds: bottom of feed pipe = top of upper tank
         (p_top,  3, LX_D, TB[3][3],  TB[3][1],  C_WATER, max_flow),  # (1-γ)×u2 → T3
         (p_top,  4, RX_D, TB[4][3],  TB[4][1],  C_WATER, max_flow),  # (1-γ)×u1 → T4
     ]
@@ -571,7 +571,7 @@ def build_tank_figure(res):
     def make_traces(heights, step):
         traces = []
 
-        # Water fill in each tank — same blue for all
+        # Water fill in each tank: same blue for all
         for tk, col in [(1, "rgb(28, 108, 215)"),
                         (2, "rgb(28, 108, 215)"),
                         (3, "rgb(28, 108, 215)"),
@@ -586,7 +586,7 @@ def build_tank_figure(res):
                 showlegend=False,
             ))
 
-        # Flow streams — width proportional to physical flow rate
+        # Flow streams: width proportional to physical flow rate
         for fd, key, xp, y_top, y_bot, col, norm in SEGS:
             hw = PW * (0.12 + 0.88 * min(1.0, fd[key][step] / norm))
             traces.append(stream_rect(xp, y_top, y_bot, hw, col))
@@ -617,7 +617,7 @@ def build_tank_figure(res):
                 showlegend=False, hoverinfo="skip",
             ))
 
-        # Water-level labels — follow water surface, shifted toward diagram centre
+        # Water-level labels: follow water surface, shifted toward diagram centre
         # to avoid internal pipes (LX_D=3.2 left, RX_D=6.8 right).
         traces.append(go.Scatter(
             x=[4.0, 6.0, 4.0, 6.0],   # inner half of each tank (toward centre x=5)
@@ -638,7 +638,7 @@ def build_tank_figure(res):
               for k in range(n_pts)]
 
     # ── static shapes ─────────────────────────────────────────────────────────
-    # `shapes` is a single flat list of plotly shape dicts — built up
+    # `shapes` is a single flat list of plotly shape dicts: built up
     # additively below. Order matters only for things that overlap (e.g.
     # the masking rectangle behind the gamma-valve symbols).
     PC = "#6b6b6b"   # unified gray for all structural elements (pipes + tank walls)
@@ -669,11 +669,11 @@ def build_tank_figure(res):
     # Right outer pipe: u2 rises to TOP_Y_U2 (lower overhead)
     shapes.append(pipe(RP-PW, RES_TOP, RP+PW, TOP_Y_U2+PW))
 
-    # Overhead pipe A — u1 (left pump) → Tank 4 (right upper): higher pipe
+    # Overhead pipe A: u1 (left pump) → Tank 4 (right upper): higher pipe
     shapes.append(pipe(LP-PW,   TOP_Y_U1-PW, RX_D+PW, TOP_Y_U1+PW))   # horizontal LP→RX_D
     shapes.append(pipe(RX_D-PW, TB[4][3]-0.02, RX_D+PW, TOP_Y_U1+PW)) # drop into T4 (overlap into horizontal to close gap)
 
-    # Overhead pipe B — u2 (right pump) → Tank 3 (left upper): lower pipe
+    # Overhead pipe B: u2 (right pump) → Tank 3 (left upper): lower pipe
     shapes.append(pipe(LX_D-PW, TOP_Y_U2-PW, RP+PW,   TOP_Y_U2+PW))   # horizontal LX_D→RP
     shapes.append(pipe(LX_D-PW, TB[3][3]-0.02, LX_D+PW, TOP_Y_U2+PW)) # drop into T3 (overlap into horizontal to close gap)
 
@@ -681,7 +681,7 @@ def build_tank_figure(res):
     shapes.append(pipe(LX_D-PW, TB[1][3]-0.02, LX_D+PW, TB[3][1]+0.02))  # T3 → T1
     shapes.append(pipe(RX_D-PW, TB[2][3]-0.02, RX_D+PW, TB[4][1]+0.02))  # T4 → T2
 
-    # Tank 1/2 bottom drain pipes — shortened to ~25% so water stream is visible below
+    # Tank 1/2 bottom drain pipes: shortened to ~25% so water stream is visible below
     _drain_bot = TB[1][1] - 0.50 * (TB[1][1] - RES_TOP)   # ≈ 1.16
     shapes.append(pipe(LX_D-PW, _drain_bot, LX_D+PW, TB[1][1]+0.02))
     shapes.append(pipe(RX_D-PW, _drain_bot, RX_D+PW, TB[2][1]+0.02))
@@ -694,7 +694,7 @@ def build_tank_figure(res):
     shapes.append(pipe(RX_P-PW, GAMMA_Y-PW, RP-PW,   GAMMA_Y+PW))   # horizontal
     shapes.append(pipe(RX_P-PW, TB[2][3]-0.02, RX_P+PW, GAMMA_Y+PW))  # vertical drop
 
-    # γ valve symbols — P&ID control valve: 4-armed cross at (cx, cy)
+    # γ valve symbols: P&ID control valve: 4-armed cross at (cx, cy)
     #   Outer arm : D-shaped semicircle (curves LEFT for γ₁, RIGHT for γ₂)
     #   Inner arm : hollow triangle  (◀ for γ₁, ▶ for γ₂)
     #   Top arm   : hollow triangle  ▽ (base at top,    tip at centre)
@@ -707,16 +707,16 @@ def build_tank_figure(res):
     for idx, vx in enumerate([LP, RP]):
         cx, cy = vx, GAMMA_Y
 
-        # Background mask — hides the grey pipe in the gaps between triangle arms.
+        # Background mask: hides the grey pipe in the gaps between triangle arms.
         # Drawn first (below triangles in the above-layer render order) so that
         # pipes appear to enter the symbol and stop at its edge.
-        # Mask sized to exactly the arm length — pipe is visible right up to the
+        # Mask sized to exactly the arm length: pipe is visible right up to the
         # triangle edges but hidden in the gaps between arms.
         shapes.append(dict(type="rect",
             x0=cx-VW, y0=cy-VW, x1=cx+VW, y1=cy+VW,
             fillcolor=BG, line=dict(width=0)))
 
-        # Outer arm — stem line + D-shaped semicircle at the end.
+        # Outer arm: stem line + D-shaped semicircle at the end.
         # The stem runs from the triangle intersection (cx,cy) outward,
         # and the semicircle sits at the far end of the stem.
         K  = 0.5523   # bezier quarter-circle approximation constant
@@ -736,7 +736,7 @@ def build_tank_figure(res):
             x0=cx, y0=cy, x1=ex, y1=cy, line=LS))
         shapes.append(dict(type="path", path=sc, fillcolor=BG, line=LS))
 
-        # Inner arm — hollow triangle (base on inner side, tip at centre)
+        # Inner arm: hollow triangle (base on inner side, tip at centre)
         bx = cx + VW if idx == 0 else cx - VW   # base x
         shapes.append(dict(type="path",
             path=(f"M {bx:.4f} {cy+VH:.4f} "
@@ -744,21 +744,21 @@ def build_tank_figure(res):
                   f"L {bx:.4f} {cy-VH:.4f} Z"),
             fillcolor=BG, line=LS))
 
-        # Top arm — hollow triangle ▽
+        # Top arm: hollow triangle ▽
         shapes.append(dict(type="path",
             path=(f"M {cx-VH:.4f} {cy+VW:.4f} "
                   f"L {cx:.4f} {cy:.4f} "
                   f"L {cx+VH:.4f} {cy+VW:.4f} Z"),
             fillcolor=BG, line=LS))
 
-        # Bottom arm — hollow triangle △
+        # Bottom arm: hollow triangle △
         shapes.append(dict(type="path",
             path=(f"M {cx-VH:.4f} {cy-VW:.4f} "
                   f"L {cx:.4f} {cy:.4f} "
                   f"L {cx+VH:.4f} {cy-VW:.4f} Z"),
             fillcolor=BG, line=LS))
 
-    # Pump circles — midway up the pipe from reservoir to valve junction
+    # Pump circles: midway up the pipe from reservoir to valve junction
     PR = 0.22                              # circle radius (smaller than before)
     PY = (RES_TOP + GAMMA_Y) / 2          # halfway between reservoir top and γ valve
     TR = PR                                # circumradius = PR → vertices on circle edge
@@ -802,7 +802,7 @@ def build_tank_figure(res):
     ] + [
         dict(x=5.0, y=0.35, text="<b>Reservoir</b>", showarrow=False,
              font=dict(size=13, color="#0a0a4e")),
-        # pump gauge labels — title above, scale endpoints alongside
+        # pump gauge labels: title above, scale endpoints alongside
         # u labels: midpoint between pump centre and gauge centre, at pump height
         dict(x=(LP + (GX[1][0]+GX[1][1])/2) / 2,
              y=(RES_TOP + GAMMA_Y) / 2,
@@ -884,7 +884,7 @@ def build_tank_figure(res):
 
 def build_timeseries(res):
     # Two time grids: `t` is element boundaries (where states are defined),
-    # `ti` is element starts (where pump inputs are defined — they are
+    # `ti` is element starts (where pump inputs are defined: they are
     # piecewise-constant within an element). Element width is h seconds
     # (user-set via the h_step slider), so element index k → t = h·k.
     t  = res["t"]
@@ -938,7 +938,7 @@ def build_timeseries(res):
 #
 # Static content describing the model and the optimization problem. Equations
 # render via Streamlit's built-in KaTeX (`$$...$$` in markdown). The parameter
-# table uses HTML for tighter spacing — Streamlit's KaTeX does NOT process
+# table uses HTML for tighter spacing: Streamlit's KaTeX does NOT process
 # `$...$` inside `unsafe_allow_html=True` blocks, so symbol cells use Unicode
 # subscripts (Aᵢ, aᵢ, …) rather than LaTeX.
 #
@@ -1083,7 +1083,7 @@ Applications to Chemical Processes*. Philadelphia, PA: SIAM, 2010.
 
 [3] M. L. Bynum, G. A. Hackebeil, W. E. Hart, C. D. Laird,
 B. L. Nicholson, J. D. Siirola, J.-P. Watson, and D. L. Woodruff,
-*Pyomo — Optimization Modeling in Python*, 3rd ed. Cham: Springer,
+*Pyomo: Optimization Modeling in Python*, 3rd ed. Cham: Springer,
 2021.
 [Springer](https://link.springer.com/book/10.1007/978-3-030-68928-5)
 """)
@@ -1095,7 +1095,7 @@ B. L. Nicholson, J. D. Siirola, J.-P. Watson, and D. L. Woodruff,
 #   1. Manual solve. If the user clicks "Run Optimizer", run the solver
 #      with the current sidebar values, stash the result, and rerun so
 #      the rest of the script renders against it. No first-load
-#      auto-solve — the page opens cold and waits for the user to click.
+#      auto-solve: the page opens cold and waits for the user to click.
 #   2. Toast. After a successful solve we set `solve_status`; on the next
 #      rerun (after the `st.rerun()` above) we pop it and show a toast.
 #   3. Tabs. Simulation (animated schematic), Plots (time series),
@@ -1115,18 +1115,18 @@ if solve_btn:
     st.session_state["res"] = res
     st.session_state["solve_status"] = res["status"]
     st.session_state["autoplay"] = True
-    st.rerun()  # clean re-render — lands on Simulation tab, no spinner blocking charts
+    st.rerun()  # clean re-render: lands on Simulation tab, no spinner blocking charts
 
-# Surface a toast only when the solver returns a non-optimal status — the
+# Surface a toast only when the solver returns a non-optimal status: the
 # happy path stays silent so solves don't spam the user. `pop` ensures the
 # warning fires once per solve (on the rerun immediately after).
 _status = st.session_state.pop("solve_status", None)
 if _status is not None and _status != "optimal":
-    st.toast(f"Solver status: {_status} — results may be inaccurate.", icon="⚠️")
+    st.toast(f"Solver status: {_status}: results may be inaccurate.", icon="⚠️")
 
 st.markdown(
     "<h2 style='margin: 0 0 0.25rem 0; padding: 0; font-size: 1.5rem; font-weight: 700;'>"
-    "Quad Tank Control — Open Loop Dynamic Optimization "
+    "Quad Tank Control: Open Loop Dynamic Optimization "
     "<a href='https://github.com/devin-griff/quad-tank' target='_blank' "
     "title='View source on GitHub' "
     "style='display: inline-block; vertical-align: 0.02em; margin: 0 0.35rem 0 0.1rem; "
@@ -1173,7 +1173,7 @@ res = st.session_state.get("res")
 
 with tab_sim:
     if has_pending_changes:
-        # Run Optimizer is enabled — the sidebar holds an initial condition
+        # Run Optimizer is enabled: the sidebar holds an initial condition
         # that hasn't been solved (cold load, or inputs changed since the
         # last solve). Preview it: a static pseudo-res holding the slider
         # heights across every frame with idle pumps, so the schematic
@@ -1206,7 +1206,7 @@ with tab_plots:
         st.info("Click **Run Optimizer** to see time-series plots.")
 
 with tab_form:
-    # Formulation is static reference material — always available, no
+    # Formulation is static reference material: always available, no
     # solve required.
     render_formulation_tab()
 
@@ -1223,27 +1223,27 @@ with tab_logs:
 
 # Post-render JS doing four things, all keyed to flags set elsewhere on
 # this run:
-#   1. Autoplay — when `_should_autoplay` is true (set after a solve),
+#   1. Autoplay: when `_should_autoplay` is true (set after a solve),
 #      simulate a click on Plotly's Play button so the animation starts
 #      without the user pressing it.
-#   2. Play-button highlight — when `_highlight_play` is true (set when
+#   2. Play-button highlight: when `_highlight_play` is true (set when
 #      the sliders match the cached `res`, i.e. nothing new to solve),
 #      recolor the Play button to Streamlit's primary red so the user
 #      sees that replay is the live action paired with the now-disabled
 #      Run Optimizer button in the sidebar.
 #   3. Mute Play/Pause/slider while the schematic is a static slider-
 #      preview (cold load, or sidebar inputs changed since the last
-#      solve) — toggled via the `qt-controls-disabled` class.
+#      solve): toggled via the `qt-controls-disabled` class.
 #   4. Grey the Play button while animation is actively playing (the
 #      live action then is Pause, not Play) and snap back to frame 0
-#      when a full play-through ends — toggled via `qt-play-active`.
+#      when a full play-through ends: toggled via `qt-play-active`.
 #
 # Each toggled effect (2, 3, 4) is delivered by a CSS rule with
 # `!important` injected into the parent document, then turned on/off by
 # class names on the Play button's wrapping <g> or the slider container.
-# Going through Plotly's `updatemenu.bgcolor` doesn't work — that
+# Going through Plotly's `updatemenu.bgcolor` doesn't work: that
 # attribute sets only the rect stroke in this Plotly version, leaving
-# the fill at the active-button default — and patching the rect's
+# the fill at the active-button default: and patching the rect's
 # inline style directly gets wiped on every Plotly redraw during
 # animation. A CSS rule with `!important` wins over Plotly's inline
 # style, and putting the class on <g> (rather than the rect) keeps it
@@ -1252,14 +1252,14 @@ with tab_logs:
 # Rendered unconditionally so Streamlit's component diff treats this as
 # one stable element rather than a fresh iframe per solve. Known
 # cosmetic issue: the iframe wrapper claims a few pixels of layout
-# space, which can shift the chart slightly on each solve — tracked
+# space, which can shift the chart slightly on each solve: tracked
 # separately.
 _should_autoplay = st.session_state.pop("autoplay", False)
 # Highlight Play only when there's a real solved result (otherwise the
 # chart is in slider-preview mode and the controls are muted).
 _highlight_play = (res is not None) and (not has_pending_changes)
 # Mute Play/Pause/slider whenever the schematic is a static slider
-# preview (cold load, or sidebar inputs changed since the last solve) —
+# preview (cold load, or sidebar inputs changed since the last solve) -
 # kept visible so the page doesn't feel empty, but not clickable since
 # there's no animation to drive.
 _disable_controls = has_pending_changes
@@ -1272,7 +1272,7 @@ components.html(f"""
     const doc = window.parent.document;
 
     // Inject the highlight + disable stylesheet once per session.
-    // Idempotent — re-renders just no-op past the existence check.
+    // Idempotent: re-renders just no-op past the existence check.
     if (!doc.getElementById('quad-tank-play-highlight-style')) {{
         const styleEl = doc.createElement('style');
         styleEl.id = 'quad-tank-play-highlight-style';
@@ -1303,7 +1303,7 @@ components.html(f"""
                 cursor: default !important;
                 pointer-events: none !important;
             }}
-            /* Slider — same treatment. Plotly's slider container class
+            /* Slider: same treatment. Plotly's slider container class
                is slider-container; muting opacity and blocking pointer
                events stops the drag handle and step ticks from firing
                animate calls. */
@@ -1316,7 +1316,7 @@ components.html(f"""
     }}
 
     // Plotly may not have rendered the buttons / slider by the time this
-    // iframe loads on a cold start — the chart drawing is async and can
+    // iframe loads on a cold start: the chart drawing is async and can
     // run after our script. Poll every 100 ms (max 30 tries = 3 s) until
     // the Play button exists, then apply the highlight + disabled
     // classes and optionally fire autoplay.
@@ -1353,7 +1353,7 @@ components.html(f"""
         // can replay from the start. The `__qtPlaying` flag on the graph
         // div distinguishes a Play run from a manual scrub or Pause. End-
         // of-play is detected via `plotly_animatingframe` checking when
-        // the active slider step hits the last frame — `plotly_animated`
+        // the active slider step hits the last frame: `plotly_animated`
         // doesn't fire reliably for long autoplay queues in this Plotly
         // build, so we use the per-frame event with both as a belt-and-
         // suspenders trigger. Stale state is cleared on every script run
