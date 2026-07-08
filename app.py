@@ -1066,7 +1066,7 @@ following the simultaneous direct-transcription approach in Biegler
 (2010, ch. 10). The resulting nonlinear program is solved with rIPOPT,
 a Rust reimplementation of the IPOPT primal-dual interior-point algorithm.
 
-See the [companion Jupyter notebook](https://github.com/devin-griff/quad_tank/blob/main/Quad%20tank%20open%20loop.ipynb)
+See the [companion Jupyter notebook](https://github.com/devin-griff/quad-tank/blob/main/Quad%20tank%20open%20loop.ipynb)
 for the full Pyomo implementation.
 
 ### References
@@ -1127,7 +1127,7 @@ if _status is not None and _status != "optimal":
 st.markdown(
     "<h2 style='margin: 0 0 0.25rem 0; padding: 0; font-size: 1.5rem; font-weight: 700;'>"
     "Quad Tank Control — Open Loop Dynamic Optimization "
-    "<a href='https://github.com/devin-griff/quad_tank' target='_blank' "
+    "<a href='https://github.com/devin-griff/quad-tank' target='_blank' "
     "title='View source on GitHub' "
     "style='display: inline-block; vertical-align: 0.02em; margin: 0 0.35rem 0 0.1rem; "
     "color: inherit;'>"
