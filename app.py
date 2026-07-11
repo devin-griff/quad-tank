@@ -888,7 +888,10 @@ def build_timeseries(res):
     # piecewise-constant within an element). Element width is h seconds
     # (user-set via the h_step slider), so element index k → t = h·k.
     t  = res["t"]
-    ti = [k * res["h"] for k in range(len(res["v1"]))]
+    # Pump inputs are piecewise-constant per element: N values over N+1
+    # element boundaries. Repeat the last value at the final boundary so a
+    # step ('hv') trace holds it across the last element.
+    ti = [k * res["h"] for k in range(len(res["v1"]) + 1)]
 
     # Two-row subplot grid; legends are split by row using `legend2`.
     fig = make_subplots(
@@ -914,9 +917,9 @@ def build_timeseries(res):
         (res["v1"], "#6A1B9A", "Pump 1 (u₁)"),
         (res["v2"], "#2E7D32", "Pump 2 (u₂)"),
     ]:
-        fig.add_trace(go.Scatter(x=ti, y=data, name=label,
-                                 line=dict(color=color, width=2),
-                                 mode="lines+markers", marker=dict(size=5),
+        fig.add_trace(go.Scatter(x=ti, y=data + data[-1:], name=label,
+                                 line=dict(color=color, width=2, shape="hv"),
+                                 mode="lines",
                                  legend="legend2"),
                       row=2, col=1)
 
