@@ -19,9 +19,9 @@
 #                  top-to-bottom; persistent values live in `st.session_state`.
 #   - pyomo     : algebraic modeling: sets, params, vars, constraints,
 #                  objective. Continuous variables only (no integers).
-#   - ripopt    : the NLP solver, a Rust reimplementation of IPOPT
+#   - pounce    : the NLP solver, a Rust reimplementation of IPOPT
 #                  (primal-dual interior-point). Called as a subprocess
-#                  via Pyomo. Binary ships in the `pyomo-ripopt` wheel.
+#                  via Pyomo. Binary ships in the `pyomo-pounce` wheel.
 #   - plotly    : both the animated schematic (Plotly frames + Play/Pause)
 #                  and the time-series subplots.
 #
@@ -42,9 +42,10 @@ from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
 import pyomo.environ as pyo
-# Registers `ripopt` with pyo.SolverFactory via decorator side-effect; the
-# wheel also bundles the solver binary so no system install is required.
-import pyomo_ripopt  # noqa: F401
+# pounce: a Rust reimplementation of IPOPT, packaged as `pyomo-pounce`.
+# Importing the package registers it with Pyomo's SolverFactory, so the
+# `pyo.SolverFactory('pounce')` call later resolves to the bundled binary.
+import pyomo_pounce  # noqa: F401
 import io, contextlib
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -54,9 +55,9 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="Quad Tank", page_icon="favicon.png",
                    layout="wide", initial_sidebar_state="expanded")
 
-# Solver: ripopt (Rust reimplementation of IPOPT), shipped via the
-# `pyomo-ripopt` wheel, which bundles the solver binary: no system install
-# required. Pyomo finds it through SolverFactory("ripopt") below.
+# Solver: pounce (Rust reimplementation of IPOPT), shipped via the
+# `pyomo-pounce` wheel, which bundles the solver binary: no system install
+# required. Pyomo finds it through SolverFactory("pounce") below.
 
 # Steady-state tank heights (cm): the reference point the controller drives
 # back to. The optimization works in deviation variables (z = x - x_ss) but
@@ -254,10 +255,10 @@ def solve_model(zi, nfe, h, rho):
     #              meaningful ranges given the steady-state offsets zss.
     #   z_i_dot[i,c] : the time derivative at the same collocation point
     #                  (unbounded: derived from z via the ODE constraints).
-    m.z10 = pyo.Var(pyo.RangeSet(0, N))
-    m.z20 = pyo.Var(pyo.RangeSet(0, N))
-    m.z30 = pyo.Var(pyo.RangeSet(0, N))
-    m.z40 = pyo.Var(pyo.RangeSet(0, N))
+    m.z10 = pyo.Var(m.iii)
+    m.z20 = pyo.Var(m.iii)
+    m.z30 = pyo.Var(m.iii)
+    m.z40 = pyo.Var(m.iii)
     m.z1  = pyo.Var(m.i, m.c, bounds=(-6.5, 14))
     m.z2  = pyo.Var(m.i, m.c, bounds=(-6.5, 14))
     m.z3  = pyo.Var(m.i, m.c, bounds=(-10.7, 13.8))
@@ -391,11 +392,11 @@ def solve_model(zi, nfe, h, rho):
     m.obj = pyo.Objective(expr=m.track, sense=pyo.minimize)
 
     # ── Solve ────────────────────────────────────────────────────────────────
-    # ripopt's binary is bundled in the pyomo-ripopt wheel, so SolverFactory
+    # pounce's binary is bundled in the pyomo-pounce wheel, so SolverFactory
     # finds it without any path lookup. `tee=True` streams solver output to
     # stdout, which we redirect into a StringIO so it can be displayed in
     # the Logs tab.
-    solver = pyo.SolverFactory('ripopt')
+    solver = pyo.SolverFactory('pounce')
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         result = solver.solve(m, tee=True)
@@ -1066,7 +1067,7 @@ set in the sidebar.
 The state and control trajectories are discretized using orthogonal
 collocation on finite elements (Radau-IIA, 3 collocation points),
 following the simultaneous direct-transcription approach in Biegler
-(2010, ch. 10). The resulting nonlinear program is solved with rIPOPT,
+(2010, ch. 10). The resulting nonlinear program is solved with POUNCE,
 a Rust reimplementation of the IPOPT primal-dual interior-point algorithm.
 
 See the [companion Jupyter notebook](https://github.com/devin-griff/quad-tank/blob/main/Quad%20tank%20open%20loop.ipynb)
@@ -1107,7 +1108,7 @@ B. L. Nicholson, J. D. Siirola, J.-P. Watson, and D. L. Woodruff,
 
 # Manual solve in response to the sidebar button.
 if solve_btn:
-    with st.spinner("Running rIPOPT optimization..."):
+    with st.spinner("Running POUNCE optimization..."):
         try:
             res = solve_model([z1init, z2init, z3init, z4init], nfe, h_step, rho)
         except Exception as e:
@@ -1150,8 +1151,8 @@ st.markdown(
     "<a href='https://github.com/Pyomo/pyomo' target='_blank' "
     "style='color: #6b7280; text-decoration: underline;'>Pyomo</a>"
     " + "
-    "<a href='https://github.com/jkitchin/ripopt' target='_blank' "
-    "style='color: #6b7280; text-decoration: underline;'>rIPOPT</a>"
+    "<a href='https://github.com/jkitchin/pounce' target='_blank' "
+    "style='color: #6b7280; text-decoration: underline;'>POUNCE</a>"
     "</span>"
     "</h2>",
     unsafe_allow_html=True,
@@ -1164,7 +1165,7 @@ with _caption_col:
         "**Run Optimizer** to compute pump trajectories that drive the "
         "system back to steady state. The **Simulation** tab animates the "
         "result, **Plots** shows the time-series, **Formulation** explains "
-        "the model, and **Logs** shows rIPOPT's output."
+        "the model, and **Logs** shows POUNCE's output."
     )
 
 # Four tabs: animated schematic, time series, formulation/references, solver log.
@@ -1215,7 +1216,7 @@ with tab_form:
 
 with tab_logs:
     if res is not None:
-        # ripopt's stdout was captured into the `log` field by `solve_model`.
+        # pounce's stdout was captured into the `log` field by `solve_model`.
         log = res.get("log", "")
         if log.strip():
             st.code(log, language=None)

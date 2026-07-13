@@ -1,7 +1,7 @@
 # Quad-tank Open-loop Optimizer
 
 A Streamlit app for the quadruple-tank process: open-loop optimal control of
-inlet flows driving tank levels to setpoints (Pyomo + ripopt NLP). The
+inlet flows driving tank levels to setpoints (Pyomo + POUNCE NLP). The
 in-app **📐 Formulation** tab summarizes the equations and cites the source
 papers: see [References](#references) below.
 
@@ -13,8 +13,8 @@ papers: see [References](#references) below.
     pip install -r requirements.txt
     streamlit run app.py
 
-The solver is **ripopt**: a Rust reimplementation of IPOPT, distributed via
-the [`pyomo-ripopt`](https://pypi.org/project/pyomo-ripopt/) wheel, which
+The solver is **POUNCE**: a Rust reimplementation of IPOPT, distributed via
+the [`pyomo-pounce`](https://pypi.org/project/pyomo-pounce/) wheel, which
 bundles the solver binary. No separate solver install needed; `pip install`
 takes care of everything.
 
@@ -22,7 +22,7 @@ takes care of everything.
 
 Auto-deploys to Fly.io on every push to `main` via
 `.github/workflows/deploy.yml`. The `Dockerfile` builds a Python 3.12 image
-and installs the app's Python dependencies (including the ripopt binary
+and installs the app's Python dependencies (including the POUNCE binary
 bundled in the wheel); `fly.toml` configures auto-stop machines. Custom domain wired through Cloudflare DNS.
 
 - **Machine**: `shared-cpu-1x` · 1 GB RAM · single region (`ord`) · `min_machines_running=0` (auto-stops on idle).
@@ -30,9 +30,9 @@ bundled in the wheel); `fly.toml` configures auto-stop machines. Custom domain w
 
 ## Files
 
-- `app.py`: Streamlit UI, Pyomo model, ripopt wrapper
+- `app.py`: Streamlit UI, Pyomo model, POUNCE wrapper
 - `Quad tank open loop.ipynb`: formulation in a notebook
-- `requirements.txt`: Python deps (rIPOPT binary is bundled in the pyomo-ripopt wheel; no system deps needed)
+- `requirements.txt`: Python deps (POUNCE binary is bundled in the pyomo-pounce wheel; no system deps needed)
 - `Dockerfile`, `fly.toml`, `.dockerignore`: Fly.io production image config
 - `.github/workflows/deploy.yml`: auto-deploy pipeline
 
